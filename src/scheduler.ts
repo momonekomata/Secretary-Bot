@@ -3,7 +3,7 @@ import { archiveUsage, type Briefings } from './briefings';
 import type { Channels } from './channel';
 import type { Config } from './config';
 import type { Store } from './store';
-import { localClock, parseHHMM } from './time';
+import { localClock, nextOccurrence, parseHHMM } from './time';
 import { resolveCity } from './tools';
 import { airQuality, aqiCategory } from './weather';
 import { fetchWaniKani } from './wanikani';
@@ -114,6 +114,10 @@ export class Scheduler {
 
   async tick(now = new Date()) {
     for (const r of this.store.takeDueReminders(now)) {
+      if (r.repeat) {
+        const next = nextOccurrence(new Date(r.dueAt), r.repeat, this.cfg.timezone, now);
+        if (next) this.store.rescheduleReminder(r, next);
+      }
       await this.channels.send(r.chatKey, `⏰ ${r.text}`).catch((e) => this.log(`Reminder #${r.id} failed:`, (e as Error).message));
     }
     const day = localClock(now, this.cfg.timezone).day;

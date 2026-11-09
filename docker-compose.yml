@@ -16,7 +16,9 @@ services:
     environment:
       # Docker runs in UTC unless told otherwise; keep schedules on your local time.
       - TZ=Asia/Bangkok
-    # Only needed for LINE (webhook) or Telegram webhook mode; polling Telegram needs no open port.
+    # Only needed for LINE (webhook, voice replies, file links) or Telegram webhook mode; polling Telegram
+    # needs no open port. Expose it to the internet with Tailscale Funnel or a Cloudflare Tunnel (below),
+    # then set PUBLIC_URL in data/.env.
     ports:
       - "8787:8787"
     labels:
@@ -35,3 +37,12 @@ services:
       - WATCHTOWER_POLL_INTERVAL=300
       - WATCHTOWER_CLEANUP=true
       - TZ=Asia/Bangkok
+
+  # Optional permanent public address for LINE with your own domain on Cloudflare: create a tunnel in the
+  # Cloudflare dashboard (Zero Trust > Networks > Tunnels), point its public hostname at
+  # http://secretary-bot:8787, paste the tunnel token below, and uncomment.
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: cloudflared
+  #   restart: always
+  #   command: tunnel --no-autoupdate run --token PASTE_YOUR_TUNNEL_TOKEN_HERE

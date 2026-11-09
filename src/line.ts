@@ -4,6 +4,9 @@ import { friendlyError, type Channel, type IncomingMessage, type Secretary } fro
 import { chunkText } from './chunk';
 import type { Button } from './commands';
 import type { Config } from './config';
+import { hasFfmpeg, toM4a } from './audio';
+import { MAX_FILE_BYTES, UserFacingError } from './documents';
+import type { FileHost } from './files';
 import type { AudioInput } from './voice';
 
 interface LineSource {
@@ -17,7 +20,7 @@ export interface LineEvent {
   webhookEventId?: string;
   replyToken?: string;
   source: LineSource;
-  message?: { id: string; type: string; text?: string };
+  message?: { id: string; type: string; text?: string; fileName?: string; fileSize?: number; latitude?: number; longitude?: number };
 }
 
 const API = 'https://api.line.me/v2/bot';
@@ -55,8 +58,40 @@ export class Line implements Channel {
   constructor(
     private readonly cfg: Config['line'],
     private readonly secretary: Secretary,
+    private readonly files: FileHost | null = null,
     private readonly log: (...a: unknown[]) => void = console.log,
   ) {}
+
+  /** Points the LINE channel's webhook at PUBLIC_URL/line, so it survives address changes without the console. */
+  async setWebhook(publicUrl: string) {
+    const res = await fetch(`${API}/channel/webhook/endpoint`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.cfg.accessToken}` },
+      body: JSON.stringify({ endpoint: `${publicUrl}/line` }),
+    });
+    if (!res.ok) throw new Error(`LINE set webhook: ${res.status} ${await res.text()}`);
+    this.log(`LINE: webhook set to ${publicUrl}/line`);
+  }
+
+  /** LINE can't take file uploads from bots: send a download link (needs PUBLIC_URL). */
+  async sendFile(to: string, name: string, data: Buffer, caption: string) {
+    const link = this.files?.enabled ? this.files.add(name, 'application/octet-stream', data, 7 * 24 * 3600_000) : null;
+    await this.send(to, link ? `${caption}\n⬇️ ${link}\n(link works for 7 days)` : `${caption}\n(Saved on the bot as backups/${name}.)`);
+  }
+
+  /** A LINE audio message for `text`, when spoken replies are possible (Gemini key, ffmpeg, PUBLIC_URL). */
+  private async audioMessage(text: string) {
+    if (!this.files?.enabled || !hasFfmpeg()) return null;
+    try {
+      const speech = await this.secretary.speech(text);
+      if (!speech) return null;
+      const url = this.files.add('reply.m4a', 'audio/mp4', await toM4a(speech), 3600_000);
+      return { type: 'audio', originalContentUrl: url, duration: speech.durationMs };
+    } catch (e) {
+      this.log('Spoken reply failed:', (e as Error).message);
+      return null;
+    }
+  }
 
   private async post(path: string, body: unknown) {
     const res = await fetch(`${API}${path}`, {
@@ -73,15 +108,17 @@ export class Line implements Channel {
   }
 
   /** Reply tokens are free but short-lived; fall back to a push if the work took too long. */
-  private async respond(replyToken: string | undefined, to: string, text: string, buttons?: Button[][]) {
+  private async respond(replyToken: string | undefined, to: string, text: string, buttons?: Button[][], extra: object[] = []) {
+    const messages = [...(text ? textMessages(text, buttons) : []), ...extra].slice(-5);
+    if (!messages.length) return;
     if (replyToken) {
       try {
-        return await this.post('/message/reply', { replyToken, messages: textMessages(text, buttons) });
+        return await this.post('/message/reply', { replyToken, messages });
       } catch (e) {
         this.log('LINE reply failed, pushing instead:', (e as Error).message);
       }
     }
-    await this.send(to, text, buttons);
+    await this.post('/message/push', { to, messages });
   }
 
   /** Call with the parsed request body after the signature has been verified. */
@@ -96,10 +133,13 @@ export class Line implements Channel {
       if (this.seen.size > 1000) this.seen = new Set([...this.seen].slice(-500));
     }
     if (ev.type !== 'message' || !ev.message || !ev.source.userId) return;
-    if (!['text', 'image', 'audio'].includes(ev.message.type)) return;
+    if (!['text', 'image', 'audio', 'file', 'location'].includes(ev.message.type)) return;
     const userId = ev.source.userId;
     const chatId = ev.source.groupId ?? ev.source.roomId ?? userId;
     const incoming: IncomingMessage = { platform: 'line', chatKey: `line:${chatId}`, userId, text: (ev.message.text ?? '').trim() };
+    if (ev.message.type === 'location' && ev.message.latitude !== undefined && ev.message.longitude !== undefined) {
+      incoming.location = { lat: ev.message.latitude, lon: ev.message.longitude };
+    }
 
     try {
       const allowed = this.cfg.allowedUsers.includes(userId);
@@ -108,10 +148,22 @@ export class Line implements Channel {
       }
       if (allowed && ev.message.type === 'image') incoming.images = await this.downloadImage(ev.message.id);
       if (allowed && ev.message.type === 'audio') incoming.audio = await this.downloadAudio(ev.message.id);
+      if (allowed && ev.message.type === 'file') {
+        const name = ev.message.fileName ?? 'file';
+        if ((ev.message.fileSize ?? 0) > MAX_FILE_BYTES) throw new UserFacingError(`${name} is too big for me (max about 15 MB).`);
+        const { type, buf } = await this.content(ev.message.id);
+        incoming.file = { name, mime: type || 'application/octet-stream', data: buf };
+      }
       const reply = await this.secretary.handle(incoming);
       if (reply) {
-        const text = reply.file ? `${reply.text}\n(Saved on the bot as backups/${reply.file.name}.)` : reply.text;
-        await this.respond(ev.replyToken, chatId, text, reply.buttons);
+        let text = reply.text;
+        if (reply.file) {
+          const link = this.files?.enabled ? this.files.add(reply.file.name, 'application/octet-stream', reply.file.data, 7 * 24 * 3600_000) : null;
+          text += link ? `\n⬇️ ${link}\n(link works for 7 days)` : `\n(Saved on the bot as backups/${reply.file.name}.)`;
+        }
+        const audio = reply.speak ? await this.audioMessage(reply.speak) : null;
+        if (reply.speak && !audio && !text) text = reply.speak;
+        await this.respond(ev.replyToken, chatId, text, reply.buttons, audio ? [audio] : []);
       }
     } catch (e) {
       this.log('LINE handler error:', e);
@@ -134,8 +186,8 @@ export class Line implements Channel {
 
   private async downloadAudio(messageId: string): Promise<AudioInput> {
     const { type, buf } = await this.content(messageId);
-    if (buf.length > MAX_AUDIO_BYTES) throw new Error('That voice note is too long for me (max about 15 MB).');
-    // LINE voice messages are M4A (AAC audio).
-    return { mimeType: !type || type.includes('m4a') ? 'audio/aac' : type, data: buf.toString('base64') };
+    if (buf.length > MAX_AUDIO_BYTES) throw new UserFacingError('That voice note is too long for me (max about 15 MB).');
+    // LINE voice messages are M4A; toGeminiAudio converts them with ffmpeg.
+    return { mimeType: !type || type === 'application/octet-stream' ? 'audio/m4a' : type, data: buf.toString('base64') };
   }
 }

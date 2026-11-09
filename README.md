@@ -10,11 +10,14 @@ from a `/settings` menu. One bot process serves both apps, and it is built to ru
 | | |
 |---|---|
 | 🤖 **Switchable AI** | Gemini 3.8 Flash (default), Gemini 4 Argon, Claude Sonnet 5.5, Claude Opus 5.5, Claude Haiku 5.5. `/settings` has buttons for the model, the thinking effort (low/medium/high) and the voice-translation language. |
-| 🗓️ **Secretary** | Natural-language chat with tools: memories, reminders, a to-do list (`/todo`, `/add`, `/done`, `/clear`), and with Google connected: Calendar (read and add events), Gmail (read unread, **draft** replies; it never sends), Google Tasks, Drive search. Commands `/calendar`, `/inbox`, `/gtask`, `/drive`. |
+| 🗓️ **Secretary** | Natural-language chat with tools: memories, one-off and **repeating** reminders (daily, weekdays, weekly, monthly), a to-do list (`/todo`, `/add`, `/done`, `/clear`). |
+| 📧 **Google** | Calendar: all your calendars (shared, family), add, change and delete events. Gmail: read and search all mail, read full messages, **draft** replies (it never sends). Tasks: list, add, complete (`/gtask`, `/gdone`). Drive: search and read Docs, Sheets, Slides, PDFs and Word files. Docs: create and append. Sheets: read, append rows, create. Contacts: look up addresses. Commands `/calendar`, `/inbox`, `/mail`, `/drive`. (Google Keep has no API for personal accounts.) |
+| 📍 **Maps & location** | Share your location in Telegram or LINE to set the weather city. With `GOOGLE_MAPS_API_KEY`: nearby places (`/places`) and live travel times. |
+| 📄 **Files** | Send a PDF, Word (.docx), text/CSV file or image and ask about it. |
 | 📰 **News curator** | `/news [topic]` turns live Google News headlines into an executive briefing. A watchlist (`/topics`, `/addtopic`, `/removetopic`) drives the morning briefing. |
 | 🌅 **Scheduled messages** | 07:00 weather report, 08:00 morning briefing (weather + AQI, today's calendar, unread email, tasks, to-dos, news per topic, WaniKani), Friday 16:00 weekend planner. On demand: `/weather [city]`, `/brief`, `/weekend`. `/setcity` changes the city. |
 | 🌦️ **Weather & air quality** | Open-Meteo forecast, geocoding and air quality (US AQI, PM2.5), free with no key. Optional alert when AQI passes a threshold. |
-| 🎙️ **Voice notes** | Gemini transcribes the audio directly (no ffmpeg), detects the language, translates it, then the agent summarises it and creates any tasks, events or reminders mentioned. |
+| 🎙️ **Voice** | Gemini transcribes voice notes (Telegram's Ogg directly, LINE's M4A via ffmpeg), detects the language, translates it, then the agent summarises it and creates any tasks, events or reminders mentioned. **Spoken replies** with Gemini TTS: `/voice off\|notes\|always`, `/say <text>` (Telegram voice bubbles; LINE audio via `PUBLIC_URL`). |
 | 🔎 **Web search** | Both AIs can search the web and read pages: Gemini through Google Search grounding and URL context, Claude through its web search and fetch tools. `BOT_WEB_TOOLS=off` turns it off. |
 | 📷 **Photos** | Send a picture of a sign, menu or textbook page and it reads and explains it. |
 | 💵 **Cost control** | Every call's tokens and estimated cost are logged. `/stats` shows today, this month and per model. A daily warning limit and a hard cap pause the AI until midnight. Nightly cleanup archives logs older than 30 days to a `.csv.gz` (sent to you on Telegram); `/cleanup` runs it now. |
@@ -42,20 +45,24 @@ npm start
 | `TELEGRAM_BOT_TOKEN` | Telegram **@BotFather** → `/newbot` |
 | `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN` | [LINE Developers console](https://developers.line.biz/console/), Messaging API channel |
 | Google | `credentials.json` (OAuth Desktop client) in `data/`, then `npm run google-auth`. See the guide, Part 3. |
+| `GOOGLE_MAPS_API_KEY` (optional) | Google Cloud → Credentials → API key, with Places API (New) and Routes API enabled (needs billing) |
+| `PUBLIC_URL` (LINE) | A public https address for the bot (Tailscale Funnel or Cloudflare Tunnel); the bot sets the LINE webhook to `PUBLIC_URL/line` itself |
 
 Message the bot once: it replies with your user id for `TELEGRAM_ALLOWED_USERS` / `LINE_ALLOWED_USERS`. Send `/id` to get the chat
 key for `BOT_NOTIFY_CHATS`, where scheduled messages go. All settings are listed in [.env.example](.env.example).
 
 ### Google
 
-1. Create a Google Cloud project and enable the Calendar, Gmail, Tasks and Drive APIs (`npm run setup-gcp` does this with the
-   `gcloud` CLI, or follow the guide).
+1. Create a Google Cloud project and enable the Calendar, Gmail, Tasks, Drive, Docs, Sheets and People APIs (`npm run setup-gcp`
+   does this with the `gcloud` CLI, or follow the guide).
 2. Configure the OAuth consent screen (External, add yourself as a test user) and **publish it to "In production"**; in "Testing",
    Google expires refresh tokens after 7 days.
 3. Create an OAuth client of type **Desktop app**, download it as `data/credentials.json`, run `npm run google-auth`.
    It works headless too: open the printed link anywhere and paste the redirected address back.
 
-Scopes: `calendar.events`, `gmail.readonly`, `gmail.compose` (drafts only), `tasks`, `drive.readonly`. Email content is passed
+Scopes: `calendar.events`, `calendar.calendarlist.readonly`, `gmail.readonly`, `gmail.compose` (drafts only), `tasks`, `drive.readonly`,
+`documents`, `spreadsheets`, `contacts.readonly`. Signed in with an older set? The bot keeps working with what it has, and `/status`
+lists what is missing (run `npm run google-auth` again). Email content is passed
 to the AI as untrusted data, and the bot can only create drafts, so a malicious email cannot make it send mail.
 
 ## Run 24/7 on a NAS (Docker + automatic updates)
@@ -73,7 +80,8 @@ NAS: docker compose ─► secretary-bot (+ ./data volume)  ◄── Watchtower
 3. `docker compose up -d` (or Synology Container Manager → Project → Create). Set `TZ` so the schedules use local time.
 
 Everything the bot keeps (conversations, memories, settings, usage log, Google token, backups) lives in `/data`, so updates keep it.
-Telegram polling needs no open ports; LINE needs a public HTTPS URL to `/line` (e.g. a Cloudflare Tunnel or the NAS reverse proxy).
+Telegram polling needs no open ports. LINE needs a public HTTPS address: run `tailscale funnel --bg 8787` on the NAS (free, no
+domain) or uncomment the `cloudflared` service in `docker-compose.yml`, then set `PUBLIC_URL`. The image includes ffmpeg.
 
 ## Make it yours
 

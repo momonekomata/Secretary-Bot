@@ -37,6 +37,13 @@ export const config = {
   /** Gemini model used to transcribe voice notes, whatever chat model is selected. */
   voiceModel: process.env.VOICE_MODEL ?? 'gemini-3.8-flash',
   defaultTranslateTo: process.env.VOICE_TRANSLATE_TO ?? 'English',
+  /** Gemini text-to-speech model and voice for spoken replies. */
+  ttsModel: process.env.TTS_MODEL ?? 'gemini-3.8-flash-tts',
+  ttsVoice: process.env.TTS_VOICE ?? 'Kore',
+  /** off | voice-notes (answer voice notes with voice) | always. Also /voice in chat. */
+  defaultVoiceReplies: (['off', 'voice-notes', 'always'].includes(process.env.VOICE_REPLIES ?? '') ? process.env.VOICE_REPLIES : 'voice-notes') as 'off' | 'voice-notes' | 'always',
+  /** Public https address of this bot (LINE webhook, audio and file links), e.g. https://bot.example.com */
+  publicUrl: (process.env.PUBLIC_URL ?? '').replace(/\/$/, ''),
 
   botName: process.env.BOT_NAME ?? 'Tabi',
   timezone: process.env.BOT_TIMEZONE ?? process.env.TZ ?? 'Asia/Bangkok',
@@ -98,6 +105,8 @@ export const config = {
   },
 
   wanikaniToken: process.env.WANIKANI_TOKEN ?? '',
+  /** Google Maps Platform key (Places API (New) + Routes API). */
+  mapsKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
 };
 
 export type Config = typeof config;

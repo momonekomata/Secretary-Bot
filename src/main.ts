@@ -8,6 +8,9 @@ import { Google } from './google';
 import { anthropicCreate, ClaudeProvider } from './llm/claude';
 import { GeminiProvider, type GenerateContent } from './llm/gemini';
 import { Line, verifyLineSignature } from './line';
+import { hasFfmpeg } from './audio';
+import { FileHost } from './files';
+import { Maps } from './maps';
 import { modelInfo } from './models';
 import { Scheduler } from './scheduler';
 import { Store } from './store';
@@ -30,7 +33,8 @@ try {
   console.warn('Google not loaded:', (e as Error).message);
 }
 
-const agent = new Agent(config, store, providers, google);
+const maps = config.mapsKey ? new Maps(config.mapsKey) : null;
+const agent = new Agent(config, store, providers, google, () => new Date(), maps);
 const briefings = new Briefings(config, store, agent);
 
 /** /status: what is configured and whether it works. */
@@ -51,13 +55,23 @@ async function status(): Promise<string> {
   if (google) {
     try {
       await google.check();
-      lines.push('Google (Calendar, Gmail, Tasks, Drive): ✅ signed in');
+      const missing = google.missing();
+      lines.push(
+        missing.length
+          ? `Google: ✅ signed in, but without ${missing.join(', ')}. Run \`npm run google-auth\` again to add them.`
+          : 'Google (Calendar, Gmail, Tasks, Drive, Docs, Sheets, Contacts): ✅ signed in',
+      );
     } catch (e) {
       lines.push(`Google: ❌ ${(e as Error).message}`);
     }
   } else lines.push('Google: — not connected (run `npm run google-auth`)');
   lines.push(`Telegram: ${config.telegram.token ? `✅ ${config.telegram.mode}` : '— off'}  LINE: ${config.line.accessToken ? '✅' : '— off'}`);
-  lines.push(`WaniKani: ${config.wanikaniToken ? '✅' : '— off'}`);
+  lines.push(`Google Maps: ${maps ? '✅' : '— off (GOOGLE_MAPS_API_KEY)'}  WaniKani: ${config.wanikaniToken ? '✅' : '— off'}`);
+  const voiceMode = store.settings().voiceReplies ?? config.defaultVoiceReplies;
+  lines.push(
+    `Spoken replies: ${voiceMode}${voiceMode === 'off' ? '' : !config.geminiKey ? ' ⚠️ needs GEMINI_API_KEY' : !hasFfmpeg() ? ' ⚠️ needs ffmpeg' : ` ✅ (${config.ttsModel}, voice ${config.ttsVoice})`}`,
+    `Public address: ${config.publicUrl || '— not set (LINE needs PUBLIC_URL for its webhook, voice replies and file links)'}`,
+  );
   lines.push(
     `Scheduled messages go to: ${config.notifyChats.join(', ') || '⚠️ nobody (set BOT_NOTIFY_CHATS to your chat from /id)'}`,
     `Weather ${config.schedule.weather || 'off'}, briefing ${config.schedule.briefing || 'off'}, weekend planner ${config.schedule.weekendDay} ${config.schedule.weekend || 'off'}, cleanup ${config.schedule.cleanup || 'off'} (${config.timezone})`,
@@ -70,7 +84,8 @@ async function status(): Promise<string> {
 const secretary = new Secretary(config, store, agent, briefings, geminiGenerate, status);
 const channels = new Channels();
 const telegram = config.telegram.token ? new Telegram(config.telegram, secretary) : null;
-const line = config.line.channelSecret && config.line.accessToken ? new Line(config.line, secretary) : null;
+const files = new FileHost(config.publicUrl);
+const line = config.line.channelSecret && config.line.accessToken ? new Line(config.line, secretary, files) : null;
 if (telegram) channels.add(telegram);
 if (line) channels.add(line);
 if (!telegram && !line) console.warn('Neither Telegram nor LINE is configured. See README.md.');
@@ -96,6 +111,15 @@ const server = createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && (path === '/' || path === '/health')) {
       res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
+      return;
+    }
+    if (req.method === 'GET' && path.startsWith('/files/')) {
+      const f = files.get(path);
+      if (!f) {
+        res.writeHead(404).end();
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': f.type, 'Content-Length': f.data.length, 'Content-Disposition': `inline; filename="${f.name}"` }).end(f.data);
       return;
     }
     if (req.method === 'POST' && path === '/telegram' && telegram && config.telegram.mode === 'webhook') {
@@ -129,11 +153,16 @@ server.listen(config.port, () => {
   const m = modelInfo(agent.model);
   console.log(`${config.botName} ${config.version} listening on :${config.port} (model ${m.id}, effort ${agent.effort}, Google ${google ? 'on' : 'off'})`);
   if (line) console.log('LINE webhook path: POST /line');
+  if (line && config.publicUrl) void line.setWebhook(config.publicUrl).catch((e) => console.error((e as Error).message));
+  if (!hasFfmpeg()) console.warn('ffmpeg not found: spoken replies and LINE voice messages need it (it is included in the Docker image).');
 });
 
 if (telegram) {
   if (config.telegram.mode === 'polling') void telegram.poll();
-  else if (process.env.TELEGRAM_WEBHOOK_URL) void telegram.setWebhook(process.env.TELEGRAM_WEBHOOK_URL).catch((e) => console.error(e));
+  else {
+    const url = process.env.TELEGRAM_WEBHOOK_URL ?? (config.publicUrl ? `${config.publicUrl}/telegram` : '');
+    if (url) void telegram.setWebhook(url).catch((e) => console.error(e));
+  }
 }
 
 const scheduler = new Scheduler(config, store, channels, briefings);
