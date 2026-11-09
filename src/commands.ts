@@ -10,6 +10,7 @@ import { JLPT_LEVELS, type JapaneseDaily } from './japanese';
 import { localDay } from './time';
 import { weatherText } from './tools';
 import { formatDay as formatWatchDay } from './healthsync';
+import { formatReport, importFromDrive } from './samsungexport';
 import type { Store } from './store';
 import { geocode } from './weather';
 
@@ -41,7 +42,7 @@ export interface CommandContext {
 }
 
 /** Commands that call an AI or an outside API: channels show "typing…" while they run. */
-export const SLOW_COMMANDS = new Set(['/health', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say']);
+export const SLOW_COMMANDS = new Set(['/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say']);
 
 export const HELP = [
   'Hi! I am your personal secretary and news curator. Just talk to me, send a photo, or send a voice note.',
@@ -53,7 +54,7 @@ export const HELP = [
   '📍 Places: share your location, /places <what>, /setcity <city>',
   '🔊 Voice: send a voice note; /voice off|notes|always, /say <text>',
   '🇯🇵 Japanese: /kanji, /word (of the day, also sent daily at 12:00), /jlpt N4',
-  '🍽️ Health: tell me or send a photo of what you ate; /food, /bmi, /profile, /weight 65.5, /health (watch data)',
+  '🍽️ Health: tell me or send a photo of what you ate; /food, /bmi, /profile, /weight 65.5, /health (watch data), /healthimport (Samsung Health export from Drive)',
   '🎬 Roleplay: /roleplay (scenes, stories, Japanese conversation practice), /roleplay end',
   '🌦️ Weather: /weather, /forecast (7 days), /weekend',
   '🎭 Personality: /persona (pick one or describe your own), /name <new name>, /ttsvoice <voice>',
@@ -326,13 +327,21 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
       }
 
       case '/health': {
-        const hs = agent.healthSync;
-        if (!hs) return needGoogle();
-        if (!(await hs.available())) return { text: 'I can\'t find any "Health Sync …" folders in your Google Drive. In the Health Sync app, check that syncing to Google Drive is on.' };
+        const h = agent.health;
+        if (!h.sync && !h.db.size) return needGoogle();
+        if (h.sync && !(await h.sync.available()) && !h.db.size) {
+          return { text: 'I can\'t find any "Health Sync …" folders in your Google Drive. In the Health Sync app, check that syncing to Google Drive is on.' };
+        }
         const days = Math.min(14, Math.max(1, Number(arg) || 2));
-        const list = Array.from({ length: days }, (_, i) => localDay(new Date(now.getTime() - (days - 1 - i) * 864e5), cfg.timezone));
-        const summaries = await Promise.all(list.map((d) => hs.day(d)));
-        return { text: `⌚ Watch data (via Health Sync)\n${summaries.map((s) => `• ${formatWatchDay(s)}`).join('\n')}\n\nToday fills in as Health Sync uploads. Ask me about trends, e.g. "how active was I this week?"` };
+        const summaries = await h.lastDays(days, now, cfg.timezone);
+        return {
+          text: `⌚ Watch data\n${summaries.map((s) => `• ${formatWatchDay(s)}`).join('\n')}\n\nToday fills in as Health Sync uploads. History: ${h.db.size} days stored. Ask me about trends, e.g. "how has my sleep changed this year?"`,
+        };
+      }
+      case '/healthimport': {
+        if (!google?.has('drive')) return needGoogle();
+        const report = await importFromDrive(google, agent.health.db, cfg.timezone);
+        return { text: formatReport(report, agent.health.db.size) };
       }
 
       // --- weather ---

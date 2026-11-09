@@ -2,6 +2,7 @@ import type { Config, Effort } from './config';
 import type { DocumentInput } from './documents';
 import type { Google } from './google';
 import type { ImageInput, Provider, ToolSpec } from './llm/types';
+import { HealthData, HealthDb } from './healthdb';
 import { HealthSync } from './healthsync';
 import type { Maps } from './maps';
 import { costOf, modelInfo, type ProviderName, type Usage } from './models';
@@ -66,8 +67,8 @@ export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: b
 export class Agent {
   private systemCache: { key: string; text: string } | null = null;
   private readonly tools: ToolSpec[];
-  /** Samsung Health data from Health Sync's Drive folders (when Google Drive is connected). */
-  readonly healthSync: HealthSync | null;
+  /** Samsung Health data: live from Health Sync's Drive folders (when Google Drive is connected) plus the stored history. */
+  readonly health: HealthData;
   private readonly locks = new Map<string, Promise<unknown>>();
 
   constructor(
@@ -78,7 +79,7 @@ export class Agent {
     private readonly now: () => Date = () => new Date(),
     readonly maps: Maps | null = null,
   ) {
-    this.healthSync = google?.has('drive') ? new HealthSync(google) : null;
+    this.health = new HealthData(new HealthDb(cfg.dataDir || null), google?.has('drive') ? new HealthSync(google) : null);
     this.tools = toolSpecs({ wanikani: !!cfg.wanikaniToken, google, maps: !!maps });
   }
 
@@ -248,7 +249,7 @@ export class Agent {
           cfg: this.cfg,
           google: this.google,
           maps: this.maps,
-          healthSync: this.healthSync,
+          health: this.health,
           readPdf: (n, pdf) => this.readPdf(n, pdf),
           now: this.now,
         }),

@@ -118,7 +118,9 @@ In Telegram, search for your bot's username, open it, and press **Start**. It re
   Tell it your age, height, weight and how much you exercise, then `/bmi` gives your BMI, BMR and daily calorie target. `/weight 65.5` logs your weight.
 - **Samsung watch:** if the Health Sync app uploads your Samsung Health data to Google Drive (folders named "Health Sync …"), the bot reads it
   once Google is connected (Part 3): `/health` shows steps, heart rate, SpO2, workouts and scale readings, your morning briefing gets a
-  one-line summary, and new weigh-ins go into your weight history. Turn on **Sleep** in Health Sync's Google Drive sync to add sleep later.
+  summary (last night's sleep, yesterday's steps, calories and workouts), and new weigh-ins go into your weight history.
+  For older history, export everything from Samsung Health (**Settings → Download personal data**), upload the .zip or .rar to Google Drive,
+  and send `/healthimport`. It takes a few minutes and replies with what it imported.
 - `/roleplay` starts a scene: a story, a mystery, or Japanese conversation practice like ordering ramen in Tokyo. `/roleplay end` stops.
 - `/forecast` gives 7 days of weather.
 - `/persona` gives it a personality: tap a ready-made one, or describe your own, e.g.

@@ -3,7 +3,8 @@ import { formatEmails, formatEvents, formatTasks, type Google, type GoogleFeatur
 import type { ToolResult, ToolSpec } from './llm/types';
 import { formatPlaces, TRAVEL_MODES, type Maps, type TravelMode } from './maps';
 import { ACTIVITY, bodyNumbers, formatBody, formatFoodDay, MEALS } from './health';
-import { formatDay as formatWatchDay, type HealthSync } from './healthsync';
+import { history, type HealthData } from './healthdb';
+import { formatDay as formatWatchDay } from './healthsync';
 import { fetchNews, formatNews } from './news';
 import type { City, Store } from './store';
 import { formatTime, localDay, REPEATS, type Repeat } from './time';
@@ -17,7 +18,7 @@ export interface ToolContext {
   cfg: Pick<Config, 'timezone' | 'wanikaniToken' | 'news' | 'weather'>;
   google: Google | null;
   maps?: Maps | null;
-  healthSync?: HealthSync | null;
+  health?: HealthData | null;
   /** Has the AI read a PDF (e.g. one opened from Drive) and return its text. */
   readPdf?: (name: string, pdf: Buffer) => Promise<string>;
   now?: () => Date;
@@ -118,12 +119,24 @@ const HEALTH: ToolSpec[] = [
   { name: 'body_stats', description: "The user's BMI, BMR, daily calorie burn and target, and recent weight history.", parameters: obj({}) },
 ];
 
-const WATCH: ToolSpec = {
-  name: 'watch_health_data',
-  description:
-    "The user's Samsung watch and smart-scale data (synced to Google Drive by the Health Sync app): daily steps, heart rate, SpO2, workouts and weigh-ins with body fat, muscle and BMR. Today's data may be incomplete until the next sync.",
-  parameters: obj({ days: int('How many days back, including today, 1-14.') }),
-};
+const WATCH: ToolSpec[] = [
+  {
+    name: 'watch_health_data',
+    description:
+      "The user's Samsung watch and smart-scale data, day by day: sleep (stages, bed and wake times), steps, calories burned, heart rate, SpO2, workouts and weigh-ins with body fat, muscle and BMR. Today's data may be incomplete until the next sync.",
+    parameters: obj({ days: int('How many days back, including today, 1-14.') }),
+  },
+  {
+    name: 'health_history',
+    description:
+      'Long-term health trends from the stored history (Samsung Health export plus everything synced since): weekly or monthly averages of steps, sleep, lowest heart rate and calories burned, weight change and workouts.',
+    parameters: obj({
+      from: str('Start day YYYY-MM-DD.'),
+      to: str('End day YYYY-MM-DD, or "" for today.'),
+      group: { type: 'string', enum: ['week', 'month'], description: 'Group by week or month.' },
+    }),
+  },
+];
 
 const ROLEPLAY: ToolSpec[] = [
   {
@@ -290,7 +303,7 @@ const MAPS: ToolSpec[] = [
 
 export function toolSpecs(opts: { wanikani: boolean; google: Google | null; maps: boolean }): ToolSpec[] {
   const g = opts.google;
-  return [...CORE, ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? [WATCH] : []), ...(opts.maps ? MAPS : [])];
+  return [...CORE, ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : [])];
 }
 
 const STAGES = ['Lesson', 'Apprentice 1', 'Apprentice 2', 'Apprentice 3', 'Apprentice 4', 'Guru 1', 'Guru 2', 'Master', 'Enlightened', 'Burned'];
@@ -429,12 +442,17 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
         return ok(`${formatBody(ctx.store.body(ctx.chatKey), Number(localDay(now, tz).slice(0, 4)))}${w.length ? `\nWeight history: ${w.map((x) => `${x.day} ${x.kg} kg`).join(', ')}` : ''}`);
       }
       case 'watch_health_data': {
-        if (!ctx.healthSync) return fail('Watch data needs Google Drive connected.');
-        if (!(await ctx.healthSync.available())) return fail('No "Health Sync …" folders found in Google Drive. Check that Health Sync is syncing to Google Drive.');
+        if (!ctx.health) return fail('Watch data is not available.');
         const days = Math.min(14, Math.max(1, Number(a.days) || 1));
-        const dayList = Array.from({ length: days }, (_, i) => localDay(new Date(now.getTime() - (days - 1 - i) * 864e5), tz));
-        const summaries = await Promise.all(dayList.map((d) => ctx.healthSync!.day(d)));
+        const summaries = await ctx.health.lastDays(days, now, tz);
         return ok(`Samsung Health data from the user's watch and scale, oldest first:\n${summaries.map(formatWatchDay).join('\n')}`);
+      }
+      case 'health_history': {
+        if (!ctx.health) return fail('Health history is not available.');
+        const from = /^\d{4}-\d{2}-\d{2}$/.test(s('from')) ? s('from') : localDay(new Date(now.getTime() - 90 * 864e5), tz);
+        const to = /^\d{4}-\d{2}-\d{2}$/.test(s('to')) ? s('to') : localDay(now, tz);
+        const rows = ctx.health.db.range(from, to);
+        return ok(`Health history ${from} to ${to}, ${rows.length} days with data:\n${history(rows, s('group') === 'week' ? 'week' : 'month')}`);
       }
       case 'roleplay_start':
         if (!s('scenario')) return fail('Describe the scene.');

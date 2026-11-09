@@ -484,6 +484,18 @@ export class Google {
     return res.text();
   }
 
+  /** Streams a Drive file to disk (for big files such as a Samsung Health export). */
+  async downloadToFile(fileId: string, path: string): Promise<number> {
+    const { createWriteStream } = await import('node:fs');
+    const { Readable } = await import('node:stream');
+    const { pipeline } = await import('node:stream/promises');
+    const res = await this.request(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`);
+    if (!res.body) throw new Error('Empty download');
+    const out = createWriteStream(path);
+    await pipeline(Readable.fromWeb(res.body as import('node:stream/web').ReadableStream), out);
+    return out.bytesWritten;
+  }
+
   // --- Docs ---
 
   /** Creates a Google Doc with `text` and returns its link. */

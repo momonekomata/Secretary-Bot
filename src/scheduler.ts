@@ -2,7 +2,7 @@ import { BudgetExceeded } from './agent';
 import { archiveUsage, type Briefings } from './briefings';
 import type { Channels } from './channel';
 import type { Config } from './config';
-import type { HealthSync } from './healthsync';
+import type { HealthData } from './healthdb';
 import type { JapaneseDaily } from './japanese';
 import type { Store } from './store';
 import { localClock, nextOccurrence, parseHHMM } from './time';
@@ -53,7 +53,7 @@ export class Scheduler {
     private readonly briefings: Briefings | null,
     private readonly log: (...a: unknown[]) => void = console.log,
     private readonly japanese: JapaneseDaily | null = null,
-    private readonly healthSync: HealthSync | null = null,
+    private readonly health: HealthData | null = null,
   ) {
     this.jobs = this.buildJobs();
   }
@@ -92,6 +92,11 @@ export class Scheduler {
         { key: 'briefing', at: s.briefing, run: () => this.broadcast((chat) => b.morning(chat)) },
         { key: 'weekend', at: s.weekend, weekday: s.weekendDay, run: () => this.broadcast(() => b.weekendPlanner()) },
       );
+    }
+    const health = this.health;
+    if (health?.sync) {
+      // Nightly: save the last few days from Health Sync into the long-term history.
+      jobs.push({ key: 'healthdb', at: s.cleanup || '03:00', run: async () => void (await health.lastDays(3, new Date(), this.cfg.timezone)) });
     }
     const jp = this.japanese;
     if (jp) jobs.push({ key: 'japanese', at: s.japanese, run: () => this.broadcast(() => jp.daily()) });
@@ -154,9 +159,10 @@ export class Scheduler {
 
   /** Hourly: copies new smart-scale weigh-ins from Health Sync into the weight history (for BMI and targets). */
   async syncWeight(now: Date) {
-    if (!this.healthSync || !this.cfg.notifyChats.length || now.getTime() - this.lastWeightSync < 3_600_000) return;
+    const sync = this.health?.sync;
+    if (!sync || !this.cfg.notifyChats.length || now.getTime() - this.lastWeightSync < 3_600_000) return;
     this.lastWeightSync = now.getTime();
-    const w = await this.healthSync.latestWeighIn();
+    const w = await sync.latestWeighIn();
     if (!w) return;
     for (const chat of this.cfg.notifyChats) {
       if (!this.store.weights(chat).some((x) => x.day === w.day && x.kg === w.kg)) this.store.logWeight(chat, w.day, w.kg);

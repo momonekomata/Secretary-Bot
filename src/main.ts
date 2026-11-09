@@ -169,7 +169,7 @@ if (telegram) {
   }
 }
 
-const scheduler = new Scheduler(config, store, channels, briefings, console.log, japanese, agent.healthSync);
+const scheduler = new Scheduler(config, store, channels, briefings, console.log, japanese, agent.health);
 scheduler.start();
 
 // Tell the owner a new version is running (e.g. after Watchtower updated the container).
