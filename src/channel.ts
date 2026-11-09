@@ -7,6 +7,7 @@ import type { Store } from './store';
 import { speakable, synthesize, toGeminiAudio, type Speech } from './audio';
 import { fileToInput, UserFacingError } from './documents';
 import type { JapaneseDaily } from './japanese';
+import type { Reviews } from './review';
 import { formatTime } from './time';
 import { airQuality, forecast, formatWeather, reverseGeocode } from './weather';
 import { transcribe, voicePrompt, type AudioInput } from './voice';
@@ -85,6 +86,7 @@ export class Secretary {
     private readonly gemini: GenerateContent | null,
     private readonly status: () => Promise<string>,
     private readonly japanese?: JapaneseDaily,
+    private readonly reviews?: Reviews,
   ) {}
 
   private allowList(platform: IncomingMessage['platform']) {
@@ -99,7 +101,17 @@ export class Secretary {
 
   /** Returns the reply to send, or null to stay silent. */
   async handle(m: IncomingMessage): Promise<CommandReply | null> {
-    const ctx = { chatKey: m.chatKey, userId: m.userId, agent: this.agent, store: this.store, cfg: this.cfg, briefings: this.briefings, status: this.status, japanese: this.japanese };
+    const ctx = {
+      chatKey: m.chatKey,
+      userId: m.userId,
+      agent: this.agent,
+      store: this.store,
+      cfg: this.cfg,
+      briefings: this.briefings,
+      status: this.status,
+      japanese: this.japanese,
+      reviews: this.reviews,
+    };
     if (m.text.startsWith('/id')) return runCommand('/id', ctx);
 
     const allowed = this.allowList(m.platform);
@@ -111,6 +123,11 @@ export class Secretary {
 
     const command = await runCommand(m.text, ctx);
     if (command) return command;
+
+    // During a WaniKani review, plain text messages are answers.
+    if (this.reviews?.active(m.chatKey) && m.text && !m.audio && !m.file && !m.location && !m.images?.length) {
+      return { text: await this.reviews.answer(m.chatKey, m.text) };
+    }
 
     if (m.location) return { text: await this.location(m.location) };
     const mode = this.store.settings().voiceReplies ?? this.cfg.defaultVoiceReplies;

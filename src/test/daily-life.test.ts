@@ -33,6 +33,8 @@ describe('Japanese of the day', () => {
     characters,
     level,
     meanings: ['Language'],
+    acceptedMeanings: ['Language'],
+    blacklist: [],
     readings: [{ reading: 'ご', type: 'onyomi', primary: true }],
     meaningMnemonic: 'A mouth that speaks five words.',
   });

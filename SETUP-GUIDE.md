@@ -90,7 +90,7 @@ Press **Enter** alone to accept the value shown in `[brackets]`.
 | LINE channel secret | **press Enter** to skip for now |
 | Chat for morning briefings | **press Enter** for now (Part 2) |
 | Daily spend warning / hard cap | press Enter to keep $0.50 and $1.50, or type your own |
-| WaniKani API token | paste it if you have one (wanikani.com → Settings → API Tokens), or press Enter |
+| WaniKani API token | paste it if you have one (see "WaniKani" below), or press Enter |
 
 ### Step 8. Start the bot and get your user id
 
@@ -155,6 +155,20 @@ tasks, news, WaniKani), a weekend planner on **Fridays at 16:00**, and spending 
 
 Change the times in `.env` (`WEATHER_TIME`, `BRIEFING_TIME`, `WEEKEND_PLANNER_TIME`; leave one empty to turn it off).
 `/status` shows what's connected and when each message is scheduled.
+
+---
+
+### WaniKani (optional)
+
+The bot can show your progress, use your current level for the kanji and word of the day, and **do your reviews in chat**:
+`/review` quizzes your due items (meaning, then reading in kana or romaji) and sends the results to WaniKani, like any review app.
+When the kanji or word of the day is due on WaniKani, it is quizzed first and counts as that review.
+
+1. Go to **https://www.wanikani.com/settings/personal_access_tokens** → **Generate a new token**, name it `Secretary Bot`.
+2. Tick only **reviews:create** (so the bot can submit reviews). Leave every other box unticked.
+3. Copy the token and add it as `WANIKANI_TOKEN` (with `npm run setup`, or in the NAS project's YAML), then restart the bot.
+
+A token without **reviews:create** still works for everything else; `/review` then quizzes you but can't record the answers.
 
 ---
 

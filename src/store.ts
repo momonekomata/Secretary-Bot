@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Effort } from './config';
+import type { ReviewSession } from './review';
 import type { Repeat } from './time';
 
 /** One remembered turn. Only plain text is kept between turns (see agent.ts for why). */
@@ -116,6 +117,8 @@ interface Data {
   food: Record<string, FoodEntry[]>;
   body: Record<string, BodyProfile>;
   weights: Record<string, { day: string; kg: number }[]>;
+  /** WaniKani review in progress, per chat. */
+  reviews: Record<string, ReviewSession>;
   /** Last local day (YYYY-MM-DD) each scheduled job or one-a-day alert ran. */
   ranOn: Record<string, string>;
 }
@@ -132,6 +135,7 @@ const empty = (): Data => ({
   food: {},
   body: {},
   weights: {},
+  reviews: {},
   ranOn: {},
 });
 
@@ -359,6 +363,18 @@ export class Store {
     const list = this.weights(chatKey).filter((w) => w.day !== day);
     this.data.weights[chatKey] = [...list, { day, kg }].sort((a, b) => a.day.localeCompare(b.day)).slice(-1000);
     this.updateBody(chatKey, { weightKg: kg });
+  }
+
+  // --- WaniKani review in chat ---
+
+  review(chatKey: string): ReviewSession | undefined {
+    return this.data.reviews[chatKey];
+  }
+
+  setReview(chatKey: string, s: ReviewSession | null) {
+    if (s) this.data.reviews[chatKey] = s;
+    else delete this.data.reviews[chatKey];
+    this.save();
   }
 
   // --- once-a-day bookkeeping ---

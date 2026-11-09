@@ -7,6 +7,7 @@ import { MODELS, modelInfo } from './models';
 import { findPersona, PERSONAS } from './personas';
 import { bodyNumbers, formatBody, formatFoodDay } from './health';
 import { JLPT_LEVELS, type JapaneseDaily } from './japanese';
+import type { Reviews } from './review';
 import { localDay } from './time';
 import { weatherText } from './tools';
 import { formatDay as formatWatchDay } from './healthsync';
@@ -38,11 +39,12 @@ export interface CommandContext {
   /** Health check for /status. */
   status: () => Promise<string>;
   japanese?: JapaneseDaily;
+  reviews?: Reviews;
   now?: () => Date;
 }
 
 /** Commands that call an AI or an outside API: channels show "typing…" while they run. */
-export const SLOW_COMMANDS = new Set(['/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say']);
+export const SLOW_COMMANDS = new Set(['/review', '/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say']);
 
 export const HELP = [
   'Hi! I am your personal secretary and news curator. Just talk to me, send a photo, or send a voice note.',
@@ -53,7 +55,7 @@ export const HELP = [
   '📧 Google: /calendar [days], /inbox, /mail <search>, /gtask [title], /gdone <number>, /drive [search]',
   '📍 Places: share your location, /places <what>, /setcity <city>',
   '🔊 Voice: send a voice note; /voice off|notes|always, /say <text>',
-  '🇯🇵 Japanese: /kanji, /word (of the day, also sent daily at 12:00), /jlpt N4',
+  '🇯🇵 Japanese: /review (your WaniKani reviews, right here), /kanji, /word (of the day, daily at 12:00; they count as reviews when due), /jlpt N4',
   '🍽️ Health: tell me or send a photo of what you ate; /food, /bmi, /profile, /weight 65.5, /health (watch data), /healthimport (Samsung Health export from Drive)',
   '🎬 Roleplay: /roleplay (scenes, stories, Japanese conversation practice), /roleplay end',
   '🌦️ Weather: /weather, /forecast (7 days), /weekend',
@@ -258,7 +260,13 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
       case '/kanji':
       case '/word': {
         if (!ctx.japanese) return { text: 'Japanese of the day is not available.' };
-        return { text: await (cmd === '/kanji' ? ctx.japanese.kanji() : ctx.japanese.word()) };
+        return { text: await (cmd === '/kanji' ? ctx.japanese.kanji(chatKey) : ctx.japanese.word(chatKey)) };
+      }
+      case '/review': {
+        const r = ctx.reviews;
+        if (!r?.enabled) return { text: 'WaniKani is not connected. Add WANIKANI_TOKEN to the bot (see SETUP-GUIDE.md).' };
+        if (['stop', 'pause', 'end', 'quit'].includes(arg.toLowerCase())) return { text: r.stop(chatKey) };
+        return { text: await r.start(chatKey, Number(arg) || 10) };
       }
       case '/jlpt': {
         const lvl = arg.toUpperCase();

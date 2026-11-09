@@ -11,6 +11,7 @@ import { Line, verifyLineSignature } from './line';
 import { hasFfmpeg } from './audio';
 import { FileHost } from './files';
 import { JapaneseDaily } from './japanese';
+import { Reviews } from './review';
 import { Maps } from './maps';
 import { modelInfo } from './models';
 import { Scheduler } from './scheduler';
@@ -37,7 +38,8 @@ try {
 const maps = config.mapsKey ? new Maps(config.mapsKey) : null;
 const agent = new Agent(config, store, providers, google, () => new Date(), maps);
 const briefings = new Briefings(config, store, agent);
-const japanese = new JapaneseDaily(config, store, agent);
+const reviews = new Reviews(config, store);
+const japanese = new JapaneseDaily(config, store, agent, undefined, undefined, reviews);
 
 /** /status: what is configured and whether it works. */
 async function status(): Promise<string> {
@@ -85,7 +87,7 @@ async function status(): Promise<string> {
   return lines.join('\n');
 }
 
-const secretary = new Secretary(config, store, agent, briefings, geminiGenerate, status, japanese);
+const secretary = new Secretary(config, store, agent, briefings, geminiGenerate, status, japanese, reviews);
 const channels = new Channels();
 const telegram = config.telegram.token ? new Telegram(config.telegram, secretary) : null;
 const files = new FileHost(config.publicUrl);

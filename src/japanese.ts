@@ -2,6 +2,7 @@ import type { Agent } from './agent';
 import { STYLE } from './briefings';
 import type { Config } from './config';
 import type { Store } from './store';
+import type { ReviewItem, Reviews } from './review';
 import { fetchSubjects, wanikaniLevel, type WkSubject } from './wanikani';
 
 export const JLPT_LEVELS = ['N5', 'N4', 'N3', 'N2', 'N1'] as const;
@@ -23,6 +24,8 @@ export class JapaneseDaily {
     private readonly agent: Agent,
     private readonly wk = { subjects: fetchSubjects, level: wanikaniLevel },
     private readonly random: () => number = Math.random,
+    /** When set, items due on WaniKani are quizzed first and the answers count as reviews. */
+    private readonly reviews: Reviews | null = null,
   ) {}
 
   jlpt(): string {
@@ -90,17 +93,63 @@ export class JapaneseDaily {
     return raw.replace(new RegExp(`^\\s*${marker}:.*\\n?`, 'm'), '').trim();
   }
 
-  kanji(): Promise<string> {
-    return this.card('kanji');
+  /** A due WaniKani review of this type, made into a quiz with the card held back until it is answered. */
+  private async dueQuiz(kind: 'kanji' | 'words', due: ReviewItem[]): Promise<ReviewItem | null> {
+    const type = kind === 'kanji' ? 'kanji' : 'vocabulary';
+    const seen = new Set(this.store.japaneseHistory()[kind]);
+    const ofType = due.filter((d) => d.subject.object === type);
+    const pick = ofType.find((d) => !seen.has(d.subject.characters)) ?? ofType[0];
+    if (!pick) return null;
+    const card = await this.agent.generate(
+      `${kind === 'kanji' ? KANJI_CARD : WORD_CARD} Use exactly the meanings and readings given; don't add others. You may adapt the WaniKani mnemonics, but make them your own. ` +
+        `Leave out the practice question: the user has just been quizzed on it. Write the explanations in ${this.language()}. ${STYLE}`,
+      this.facts(pick.subject),
+      kind === 'kanji' ? 'kanji' : 'word',
+    );
+    this.store.addJapanese(kind, pick.subject.characters);
+    return { ...pick, card };
   }
 
-  word(): Promise<string> {
-    return this.card('words');
+  private async dueNow(): Promise<ReviewItem[]> {
+    if (!this.reviews?.enabled) return [];
+    return this.reviews.dueItems().catch(() => []);
   }
 
-  /** The daily message: kanji and word together. */
-  async daily(): Promise<string> {
-    const [k, w] = await Promise.all([this.kanji(), this.word()]);
-    return `🇯🇵 Today's Japanese\n\n${k}\n\n— — —\n\n${w}`;
+  private quizIntro(n: number) {
+    return n === 1
+      ? 'It is due on WaniKani, so answer here and it counts as your review (the full card comes after).'
+      : 'Both are due on WaniKani, so answer here and they count as your reviews (the full cards come after).';
+  }
+
+  /** Kanji of the day; quizzes it first when it is due on WaniKani and `chatKey` is given. */
+  async kanji(chatKey?: string): Promise<string> {
+    return this.single('kanji', chatKey);
+  }
+
+  async word(chatKey?: string): Promise<string> {
+    return this.single('words', chatKey);
+  }
+
+  private async single(kind: 'kanji' | 'words', chatKey?: string): Promise<string> {
+    if (chatKey && this.reviews) {
+      const quiz = await this.dueQuiz(kind, await this.dueNow());
+      if (quiz) return `🈁 ${kind === 'kanji' ? 'Kanji' : 'Word'} of the day. ${this.quizIntro(1)}\n\n${this.reviews.begin(chatKey, [quiz])}`;
+    }
+    return this.card(kind);
+  }
+
+  /** The daily message: kanji and word together; due ones become a quiz that counts on WaniKani. */
+  async daily(chatKey?: string): Promise<string> {
+    const due = chatKey ? await this.dueNow() : [];
+    const [kq, wq] = await Promise.all([this.dueQuiz('kanji', due), this.dueQuiz('words', due)]);
+    const [k, w] = await Promise.all([kq ? null : this.card('kanji'), wq ? null : this.card('words')]);
+    const cards = [k, w].filter(Boolean).join('\n\n— — —\n\n');
+    const quiz = [kq, wq].filter((q): q is ReviewItem => !!q);
+    const parts = ["🇯🇵 Today's Japanese"];
+    if (cards) parts.push(cards);
+    if (quiz.length && chatKey && this.reviews) {
+      parts.push(`${quiz.length === 2 ? "Today's kanji and word" : `Today's ${kq ? 'kanji' : 'word'}`}: ${this.quizIntro(quiz.length)}`, this.reviews.begin(chatKey, quiz));
+    }
+    return parts.join('\n\n');
   }
 }

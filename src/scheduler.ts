@@ -99,7 +99,7 @@ export class Scheduler {
       jobs.push({ key: 'healthdb', at: s.cleanup || '03:00', run: async () => void (await health.lastDays(3, new Date(), this.cfg.timezone)) });
     }
     const jp = this.japanese;
-    if (jp) jobs.push({ key: 'japanese', at: s.japanese, run: () => this.broadcast(() => jp.daily()) });
+    if (jp) jobs.push({ key: 'japanese', at: s.japanese, run: () => this.broadcast((chat) => jp.daily(chat)) });
     if (s.nudgeHour !== '' && this.cfg.wanikaniToken) {
       jobs.push({
         key: 'nudge',

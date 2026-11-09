@@ -154,6 +154,7 @@ export class Telegram implements Channel {
       ['weather', "Today's weather and air quality"],
       ['forecast', '7-day forecast'],
       ['weekend', 'Weekend weather planner'],
+      ['review', 'Do your WaniKani reviews here'],
       ['kanji', 'Kanji of the day'],
       ['word', 'Japanese word of the day'],
       ['food', "Today's food and calories"],
