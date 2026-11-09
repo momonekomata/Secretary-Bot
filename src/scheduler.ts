@@ -2,6 +2,7 @@ import { BudgetExceeded } from './agent';
 import { archiveUsage, type Briefings } from './briefings';
 import type { Channels } from './channel';
 import type { Config } from './config';
+import type { JapaneseDaily } from './japanese';
 import type { Store } from './store';
 import { localClock, nextOccurrence, parseHHMM } from './time';
 import { resolveCity } from './tools';
@@ -50,6 +51,7 @@ export class Scheduler {
     private readonly channels: Channels,
     private readonly briefings: Briefings | null,
     private readonly log: (...a: unknown[]) => void = console.log,
+    private readonly japanese: JapaneseDaily | null = null,
   ) {
     this.jobs = this.buildJobs();
   }
@@ -89,6 +91,8 @@ export class Scheduler {
         { key: 'weekend', at: s.weekend, weekday: s.weekendDay, run: () => this.broadcast(() => b.weekendPlanner()) },
       );
     }
+    const jp = this.japanese;
+    if (jp) jobs.push({ key: 'japanese', at: s.japanese, run: () => this.broadcast(() => jp.daily()) });
     if (s.nudgeHour !== '' && this.cfg.wanikaniToken) {
       jobs.push({
         key: 'nudge',

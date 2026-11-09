@@ -5,6 +5,10 @@ import { formatEmails, formatEvents, formatTasks } from './google';
 import { formatPlaces } from './maps';
 import { MODELS, modelInfo } from './models';
 import { findPersona, PERSONAS } from './personas';
+import { bodyNumbers, formatBody, formatFoodDay } from './health';
+import { JLPT_LEVELS, type JapaneseDaily } from './japanese';
+import { localDay } from './time';
+import { weatherText } from './tools';
 import type { Store } from './store';
 import { geocode } from './weather';
 
@@ -31,11 +35,12 @@ export interface CommandContext {
   briefings: Briefings;
   /** Health check for /status. */
   status: () => Promise<string>;
+  japanese?: JapaneseDaily;
   now?: () => Date;
 }
 
 /** Commands that call an AI or an outside API: channels show "typing…" while they run. */
-export const SLOW_COMMANDS = new Set(['/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say']);
+export const SLOW_COMMANDS = new Set(['/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say']);
 
 export const HELP = [
   'Hi! I am your personal secretary and news curator. Just talk to me, send a photo, or send a voice note.',
@@ -46,6 +51,10 @@ export const HELP = [
   '📧 Google: /calendar [days], /inbox, /mail <search>, /gtask [title], /gdone <number>, /drive [search]',
   '📍 Places: share your location, /places <what>, /setcity <city>',
   '🔊 Voice: send a voice note; /voice off|notes|always, /say <text>',
+  '🇯🇵 Japanese: /kanji, /word (of the day, also sent daily at 12:00), /jlpt N4',
+  '🍽️ Health: tell me or send a photo of what you ate; /food, /bmi, /profile, /weight 65.5',
+  '🎬 Roleplay: /roleplay (scenes, stories, Japanese conversation practice), /roleplay end',
+  '🌦️ Weather: /weather, /forecast (7 days), /weekend',
   '🎭 Personality: /persona (pick one or describe your own), /name <new name>, /ttsvoice <voice>',
   '⚙️ Settings: /settings (AI model, thinking effort, voice translation), /stats, /status, /cleanup',
   '💬 Chat: /reset (forget this conversation, keep memories), /id',
@@ -126,6 +135,44 @@ export function personaView(ctx: CommandContext, notice = ''): CommandReply {
   };
 }
 
+export const ROLEPLAYS: { key: string; label: string; scenario: string }[] = [
+  {
+    key: 'ramen',
+    label: '🍜 Ramen shop in Tokyo',
+    scenario:
+      'Japanese practice: you are the friendly owner of a small ramen shop in Tokyo and the user is a customer. Speak simple, natural Japanese (add romaji and a short English hint in brackets), and after each user reply gently correct any mistakes in one line.',
+  },
+  {
+    key: 'directions',
+    label: '🚉 Lost in Kyoto',
+    scenario:
+      'Japanese practice: the user is a tourist lost near Kyoto Station and asks you, a helpful local, for directions to Kiyomizu-dera. Simple polite Japanese with romaji, and gentle one-line corrections after each user reply.',
+  },
+  {
+    key: 'interview',
+    label: '💼 Job interview in Japanese',
+    scenario:
+      'Japanese practice: you interview the user for an office job at a Tokyo company. Polite keigo, one question at a time, romaji for hard words, and brief feedback on their Japanese after each answer.',
+  },
+  {
+    key: 'cafe',
+    label: '☕ Café chat',
+    scenario: 'You are an old friend meeting the user at a cosy café in Bangkok to catch up on life. Relaxed, warm, curious, in the language the user writes in.',
+  },
+  {
+    key: 'adventure',
+    label: '🐉 Fantasy adventure',
+    scenario:
+      'An interactive fantasy adventure: you are the narrator and every other character; the user is the hero. Describe scenes vividly but briefly, and end each turn with a choice or a question.',
+  },
+  {
+    key: 'mystery',
+    label: '🕵️ Detective mystery',
+    scenario:
+      'An interactive detective mystery set in old Bangkok: you are the narrator and the suspects, the user is the detective. Hide clues fairly so the case can be solved, and end each turn with what the detective notices.',
+  },
+];
+
 const parseCommand = (text: string) => {
   const trimmed = text.trim();
   const [head, ...rest] = trimmed.split(/\s+/);
@@ -205,6 +252,82 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         store.updateSettings({ ttsVoice: arg });
         return { text: `✅ Spoken replies will use the ${arg} voice.`, speak: `Hello! This is how I sound now.` };
       }
+      // --- Japanese ---
+      case '/kanji':
+      case '/word': {
+        if (!ctx.japanese) return { text: 'Japanese of the day is not available.' };
+        return { text: await (cmd === '/kanji' ? ctx.japanese.kanji() : ctx.japanese.word()) };
+      }
+      case '/jlpt': {
+        const lvl = arg.toUpperCase();
+        if (!(JLPT_LEVELS as readonly string[]).includes(lvl)) {
+          return { text: `Kanji and words of the day are at JLPT ${store.settings().jlptLevel ?? 'N4'} (when WaniKani isn't connected; with WaniKani they follow your level). Change it with /jlpt N5 … /jlpt N1.` };
+        }
+        store.updateSettings({ jlptLevel: lvl as (typeof JLPT_LEVELS)[number] });
+        return { text: `✅ Kanji and words of the day will be JLPT ${lvl} level.` };
+      }
+
+      // --- roleplay ---
+      case '/roleplay': {
+        const rp = store.settings().roleplay;
+        if (['end', 'stop', 'off', 'exit'].includes(arg.toLowerCase())) {
+          store.updateSettings({ roleplay: undefined });
+          return { text: rp ? '🎬 Scene ended. I am back to my normal self.' : 'No roleplay is running.' };
+        }
+        if (!arg) {
+          return {
+            text: [
+              rp ? `🎬 Current scene: ${rp.scenario}\nEnd it with /roleplay end.\n` : '',
+              '🎬 Pick a scene, or describe your own, e.g.',
+              '/roleplay you are a barista in Osaka and I order coffee in Japanese',
+            ]
+              .filter(Boolean)
+              .join('\n'),
+            buttons: ROLEPLAYS.map((r) => [{ label: r.label, command: `/roleplay ${r.key}` }]),
+          };
+        }
+        const preset = ROLEPLAYS.find((r) => r.key === arg.toLowerCase());
+        const scenario = preset?.scenario ?? arg.slice(0, 1500);
+        store.updateSettings({ roleplay: { scenario, startedAt: now.toISOString() } });
+        const opening = await agent.reply({ chatKey, text: '(The roleplay starts now. Open the scene in character.)', kind: 'roleplay' });
+        return { text: `🎬 ${preset?.label ?? 'Scene'} — say /roleplay end to stop.\n\n${opening}` };
+      }
+
+      // --- food and body ---
+      case '/food': {
+        const today = localDay(now, cfg.timezone);
+        const [sub, id] = arg.split(/\s+/);
+        if (sub === 'remove' || sub === 'delete') {
+          const f = store.removeFood(chatKey, Number(String(id).replace('#', '')));
+          return { text: f ? `🗑️ Removed ${f.name} (${f.kcal} kcal).` : `No food entry ${id ?? ''}. See /food.` };
+        }
+        const day = sub === 'yesterday' ? localDay(new Date(now.getTime() - 864e5), cfg.timezone) : /^\d{4}-\d{2}-\d{2}$/.test(sub ?? '') ? sub : today;
+        const nums = bodyNumbers(store.body(chatKey), Number(day.slice(0, 4)));
+        return { text: formatFoodDay(store.food(chatKey, day), 'missing' in nums ? null : nums.target, day === today ? 'Today' : day) };
+      }
+      case '/bmi':
+      case '/profile': {
+        const year = Number(localDay(now, cfg.timezone).slice(0, 4));
+        const tip = cmd === '/profile' ? '\n\nTo change it, just tell me, e.g. "I\'m 31, female, 158 cm, 52 kg, I work out twice a week and want to keep my weight".' : '';
+        return { text: formatBody(store.body(chatKey), year) + tip };
+      }
+      case '/weight': {
+        const kg = Number(arg.replace(/kg/i, '').trim());
+        if (!(kg > 20 && kg < 400)) {
+          const w = store.weights(chatKey).slice(-10);
+          return { text: w.length ? `⚖️ Recent weights:\n${w.map((x) => `• ${x.day}: ${x.kg} kg`).join('\n')}\n\nLog today with /weight 65.5` : 'Log your weight with /weight 65.5' };
+        }
+        const day = localDay(now, cfg.timezone);
+        const before = store.weights(chatKey).filter((x) => x.day !== day).at(-1);
+        store.logWeight(chatKey, day, Math.round(kg * 10) / 10);
+        const change = before ? ` (${kg - before.kg >= 0 ? '+' : ''}${(kg - before.kg).toFixed(1)} kg since ${before.day})` : '';
+        return { text: `⚖️ Logged ${kg} kg${change}.\n\n${formatBody(store.body(chatKey), Number(day.slice(0, 4)))}` };
+      }
+
+      // --- weather ---
+      case '/forecast':
+        return { text: `🌦️ 7-day forecast\n${await weatherText(store, cfg.weather.defaultCity, arg, 7)}` };
+
       case '/voice': {
         const mode = arg === 'notes' ? 'voice-notes' : arg;
         if (!['off', 'voice-notes', 'always'].includes(mode)) return { text: 'Use /voice off, /voice notes (reply to voice notes with voice) or /voice always.' };

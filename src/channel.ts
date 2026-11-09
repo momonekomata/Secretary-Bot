@@ -6,6 +6,7 @@ import type { GenerateContent } from './llm/gemini';
 import type { Store } from './store';
 import { speakable, synthesize, toGeminiAudio, type Speech } from './audio';
 import { fileToInput, UserFacingError } from './documents';
+import type { JapaneseDaily } from './japanese';
 import { formatTime } from './time';
 import { airQuality, forecast, formatWeather, reverseGeocode } from './weather';
 import { transcribe, voicePrompt, type AudioInput } from './voice';
@@ -83,6 +84,7 @@ export class Secretary {
     /** Gemini, for voice transcription; null when GEMINI_API_KEY is missing. */
     private readonly gemini: GenerateContent | null,
     private readonly status: () => Promise<string>,
+    private readonly japanese?: JapaneseDaily,
   ) {}
 
   private allowList(platform: IncomingMessage['platform']) {
@@ -97,7 +99,7 @@ export class Secretary {
 
   /** Returns the reply to send, or null to stay silent. */
   async handle(m: IncomingMessage): Promise<CommandReply | null> {
-    const ctx = { chatKey: m.chatKey, userId: m.userId, agent: this.agent, store: this.store, cfg: this.cfg, briefings: this.briefings, status: this.status };
+    const ctx = { chatKey: m.chatKey, userId: m.userId, agent: this.agent, store: this.store, cfg: this.cfg, briefings: this.briefings, status: this.status, japanese: this.japanese };
     if (m.text.startsWith('/id')) return runCommand('/id', ctx);
 
     const allowed = this.allowList(m.platform);

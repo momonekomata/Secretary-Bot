@@ -10,6 +10,7 @@ import { GeminiProvider, type GenerateContent } from './llm/gemini';
 import { Line, verifyLineSignature } from './line';
 import { hasFfmpeg } from './audio';
 import { FileHost } from './files';
+import { JapaneseDaily } from './japanese';
 import { Maps } from './maps';
 import { modelInfo } from './models';
 import { Scheduler } from './scheduler';
@@ -36,6 +37,7 @@ try {
 const maps = config.mapsKey ? new Maps(config.mapsKey) : null;
 const agent = new Agent(config, store, providers, google, () => new Date(), maps);
 const briefings = new Briefings(config, store, agent);
+const japanese = new JapaneseDaily(config, store, agent);
 
 /** /status: what is configured and whether it works. */
 async function status(): Promise<string> {
@@ -76,14 +78,14 @@ async function status(): Promise<string> {
   );
   lines.push(
     `Scheduled messages go to: ${config.notifyChats.join(', ') || '⚠️ nobody (set BOT_NOTIFY_CHATS to your chat from /id)'}`,
-    `Weather ${config.schedule.weather || 'off'}, briefing ${config.schedule.briefing || 'off'}, weekend planner ${config.schedule.weekendDay} ${config.schedule.weekend || 'off'}, cleanup ${config.schedule.cleanup || 'off'} (${config.timezone})`,
+    `Kanji & word of the day ${config.schedule.japanese || 'off'}, weather ${config.schedule.weather || 'off'}, briefing ${config.schedule.briefing || 'off'}, weekend planner ${config.schedule.weekendDay} ${config.schedule.weekend || 'off'}, cleanup ${config.schedule.cleanup || 'off'} (${config.timezone})`,
   );
   const b = config.billing;
   lines.push(`Spending today: $${agent.spentToday().toFixed(4)}${b.warnUsd !== null ? `, warn at $${b.warnUsd}` : ''}${b.capUsd !== null ? `, cap $${b.capUsd}` : ''}`);
   return lines.join('\n');
 }
 
-const secretary = new Secretary(config, store, agent, briefings, geminiGenerate, status);
+const secretary = new Secretary(config, store, agent, briefings, geminiGenerate, status, japanese);
 const channels = new Channels();
 const telegram = config.telegram.token ? new Telegram(config.telegram, secretary) : null;
 const files = new FileHost(config.publicUrl);
@@ -167,7 +169,7 @@ if (telegram) {
   }
 }
 
-const scheduler = new Scheduler(config, store, channels, briefings);
+const scheduler = new Scheduler(config, store, channels, briefings, console.log, japanese);
 scheduler.start();
 
 // Tell the owner a new version is running (e.g. after Watchtower updated the container).

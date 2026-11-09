@@ -51,6 +51,14 @@ export const PERSONAS: Persona[] = [
     speakingStyle: 'patiently and encouragingly, like a kind teacher',
   },
   {
+    key: 'companion',
+    label: '💬 Companion',
+    description:
+      'A warm, attentive friend to talk with about anything: everyday life, worries, hobbies, ideas. Curious, asks follow-up questions, remembers what matters to the user and checks in on it later, and shares light opinions and humour of its own.',
+    voice: 'Zephyr',
+    speakingStyle: 'warmly and naturally, like a close friend',
+  },
+  {
     key: 'coach',
     label: '🏋️ Coach',
     description:

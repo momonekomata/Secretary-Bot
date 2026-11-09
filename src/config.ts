@@ -79,6 +79,8 @@ export const config = {
     /** Day for the weekend planner: sun, mon, ... sat. */
     weekendDay: (process.env.WEEKEND_PLANNER_DAY ?? 'fri').toLowerCase(),
     cleanup: process.env.CLEANUP_TIME ?? '03:00',
+    /** Kanji and word of the day. */
+    japanese: process.env.JAPANESE_TIME ?? '12:00',
     /** Legacy WaniKani nudge hour (0-23). */
     nudgeHour: process.env.BOT_DAILY_NUDGE_HOUR ?? '',
   },
