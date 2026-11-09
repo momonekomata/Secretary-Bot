@@ -112,13 +112,14 @@ describe('HRV from Samsung side files', () => {
     writeFileSync(
       join(dir, 'com.samsung.health.hrv.20261109212464.csv'),
       [
-        'com.samsung.health.hrv,6313002,4',
+        '\uFEFFcom.samsung.health.hrv,7013001,1',
         'create_sh_ver,start_time,custom,binning_data,modify_sh_ver,update_time,create_time,time_offset,deviceuuid,comment,pkg_name,end_time,datauuid',
-        '6.2,2024-12-19 15:00:00.000,,a1b2.binning_data.json,,,,UTC+0700,dev,,com.sec.android.app.shealth,2024-12-19 23:00:00.000,a1b2',
+        // The real export's shape: one row per hour, readings in a side file, trailing comma.
+        '62800471,2024-12-19 15:00:00.000,,a1b2.binning_data.json,62800471,2024-12-19 16:05:13.473,2024-12-19 16:05:13.473,UTC+0700,dev,,com.sec.android.app.shealth,2024-12-19 16:00:00.000,a1b2,',
         '6.2,2024-12-20 15:00:00.000,"{""sdnn"": 61}",,,,,UTC+0700,dev,,com.sec.android.app.shealth,2024-12-20 23:00:00.000,c3d4',
       ].join('\n'),
     );
-    writeFileSync(join(dir, 'jsons', 'com.samsung.health.hrv', 'a', 'a1b2.binning_data.json'), JSON.stringify([{ start_time: 1, rmssd: 40.5 }, { start_time: 2, rmssd: 49.5 }]));
+    writeFileSync(join(dir, 'jsons', 'com.samsung.health.hrv', 'a', 'a1b2.binning_data.json'), JSON.stringify([{ start_time: 1, end_time: 2, sdnn: 77.9, rmssd: 40.5 }, { start_time: 3, end_time: 4, sdnn: 64, rmssd: 49.5 }]));
     writeFileSync(join(dir, 'com.samsung.health.oxygen_saturation.raw.20261109212464.csv'), 'com.samsung.health.oxygen_saturation.raw,1,1\nstart_time,binning_data\n2026-10-05 21:10:00.000,x.json\n');
 
     const work = mkdtempSync(join(tmpdir(), 'sb-hrv-zip-'));
