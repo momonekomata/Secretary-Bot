@@ -13,7 +13,7 @@ interface Db {
 }
 
 const hasData = (r: DayRecord) =>
-  r.steps != null || !!r.heart || !!r.oxygen || !!r.weight || !!r.workouts?.length || !!r.sleep || !!r.energy;
+  r.steps != null || !!r.heart || !!r.oxygen || !!r.weight || !!r.workouts?.length || !!r.sleep || !!r.energy || !!(r.extra && Object.keys(r.extra).length);
 
 /**
  * Long-term health history: every day the bot has seen from Health Sync, plus everything imported from a
@@ -91,6 +91,7 @@ export function toSummary(day: string, r: DayRecord | undefined): DaySummary {
     workouts: r?.workouts ?? [],
     sleep: r?.sleep ?? null,
     energy: r?.energy ?? null,
+    ...(r?.extra ? { extra: r.extra } : {}),
   };
 }
 
@@ -146,6 +147,9 @@ export function history(rows: [string, DayRecord][], group: Group): string {
     const kcal = avg(rs.map((r) => r.energy?.total).filter((x): x is number => !!x && x > 800));
     const weights = rs.map((r) => r.weight?.kg).filter((x): x is number => !!x);
     const workouts = rs.flatMap((r) => r.workouts ?? []);
+    const hrv = avg(rs.map((r) => r.extra?.hrv).filter((x): x is number => !!x));
+    const stress = avg(rs.map((r) => r.extra?.stress).filter((x): x is number => !!x));
+    const eaten = avg(rs.map((r) => r.extra?.food?.kcal).filter((x): x is number => !!x));
     const parts = [
       steps != null ? `avg ${steps.toLocaleString('en-US')} steps/day` : '',
       sleep != null ? `avg sleep ${Math.floor(sleep / 60)}h ${String(sleep % 60).padStart(2, '0')}m` : '',
@@ -153,6 +157,9 @@ export function history(rows: [string, DayRecord][], group: Group): string {
       kcal != null ? `avg ${kcal} kcal burned/day` : '',
       weights.length ? `weight ${weights[0]}→${weights.at(-1)} kg` : '',
       workouts.length ? `${workouts.length} workouts, ${workouts.reduce((n, w) => n + w.minutes, 0)} min, ${workouts.reduce((n, w) => n + w.kcal, 0)} kcal` : '',
+      hrv != null ? `avg HRV ${hrv} ms` : '',
+      stress != null ? `avg stress ${stress}` : '',
+      eaten != null ? `avg ${eaten} kcal eaten/day (logged days)` : '',
     ].filter(Boolean);
     return `${k} (${rs.length} days): ${parts.join('; ') || 'no data'}`;
   });

@@ -66,11 +66,21 @@ export interface ImportReport {
   days: number;
   from: string;
   to: string;
+  /** Most recent height in the export, for the body profile. */
+  latestHeightCm?: number;
 }
 
 /** Per-day accumulator while reading. */
+type Acc = DayRecord & {
+  _hr?: { sum: number; n: number };
+  _o2?: { sum: number; n: number };
+  _stages?: Record<string, number>;
+  /** Running averages for extras (hrv, respiratory, stress). */
+  _avg?: Record<string, { sum: number; n: number }>;
+};
+
 class Days {
-  map = new Map<string, DayRecord & { _hr?: { sum: number; n: number }; _o2?: { sum: number; n: number }; _stages?: Record<string, number> }>();
+  map = new Map<string, Acc>();
   get(day: string) {
     let d = this.map.get(day);
     if (!d) this.map.set(day, (d = {}));
@@ -168,7 +178,10 @@ export class SamsungImporter {
     // Finish averages and sleep stages.
     const records: Record<string, DayRecord> = {};
     for (const [day, d] of days.map) {
-      const { _hr, _o2, _stages, ...rec } = d;
+      const { _hr, _o2, _stages, _avg, ...rec } = d;
+      for (const [k, v] of Object.entries(_avg ?? {})) {
+        if (v.n) rec.extra = { ...(rec.extra ?? {}), [k]: Math.round((v.sum / v.n) * 10) / 10 };
+      }
       if (_hr?.n) rec.heart = { ...(rec.heart ?? { min: 0, max: 0 }), avg: Math.round(_hr.sum / _hr.n) };
       if (_o2?.n) rec.oxygen = { avg: Math.round(_o2.sum / _o2.n), min: rec.oxygen?.min ?? 0 };
       if (_stages && rec.sleep) {
@@ -183,7 +196,11 @@ export class SamsungImporter {
       records[day] = rec;
     }
     const sorted = Object.keys(records).sort();
-    return { records, report: { types, skipped, days: sorted.length, from: sorted[0] ?? '', to: sorted.at(-1) ?? '' } };
+    const latestHeightCm = [...sorted].reverse().map((d) => records[d].extra?.heightCm).find((h) => !!h);
+    return {
+      records,
+      report: { types, skipped, days: sorted.length, from: sorted[0] ?? '', to: sorted.at(-1) ?? '', ...(latestHeightCm ? { latestHeightCm } : {}) },
+    };
   }
 
   /** Returns a row handler for a data type (returning the day it touched), or null when the type isn't used. */
@@ -259,6 +276,82 @@ export class SamsungImporter {
         const d = days.get(day);
         d._o2 = { sum: (d._o2?.sum ?? 0) + v, n: (d._o2?.n ?? 0) + 1 };
         d.oxygen = { avg: 0, min: Math.min(d.oxygen?.min || Infinity, v) };
+        return day;
+      };
+    }
+    // Extras: the first column that exists wins (exports differ between app versions).
+    const pick = (row: R, cols: string[]) => {
+      for (const c of cols) if (row[c] !== undefined && Number.isFinite(n(row[c]))) return n(row[c]);
+      return NaN;
+    };
+    const average = (key: 'hrv' | 'respiratory' | 'stress', cols: string[], ok: (v: number) => boolean) => (row: R) => {
+      const day = dayOf(row, 'start_time', 'create_time');
+      const v = pick(row, cols);
+      if (!day || !ok(v)) return null;
+      const d = days.get(day);
+      d._avg = { ...(d._avg ?? {}), [key]: { sum: (d._avg?.[key]?.sum ?? 0) + v, n: (d._avg?.[key]?.n ?? 0) + 1 } };
+      return day;
+    };
+    if (/(^|\.)hrv$/.test(type)) return average('hrv', ['rmssd', 'hrv', 'sdnn', 'heart_rate_variability', 'value'], (v) => v > 0 && v < 400);
+    if (/respiratory_rate$/.test(type)) return average('respiratory', ['respiratory_rate', 'average', 'rate', 'value'], (v) => v > 3 && v < 60);
+    if (/(^|\.)stress$/.test(type)) return average('stress', ['score', 'stress', 'value'], (v) => v >= 0 && v <= 100);
+    if (/floors_climbed$/.test(type)) {
+      return (row) => {
+        const day = dayOf(row, 'start_time', 'create_time');
+        const v = pick(row, ['floor', 'floors', 'count']);
+        if (!day || !(v > 0)) return null;
+        const d = days.get(day);
+        d.extra = { ...(d.extra ?? {}), floors: Math.round((d.extra?.floors ?? 0) + v) };
+        return day;
+      };
+    }
+    if (/water_intake$/.test(type)) {
+      return (row) => {
+        const day = dayOf(row, 'start_time', 'create_time');
+        const v = pick(row, ['amount', 'water', 'volume']);
+        if (!day || !(v > 0)) return null;
+        const d = days.get(day);
+        d.extra = { ...(d.extra ?? {}), waterMl: Math.round((d.extra?.waterMl ?? 0) + v) };
+        return day;
+      };
+    }
+    if (/blood_pressure$/.test(type)) {
+      return (row) => {
+        const day = dayOf(row, 'start_time', 'create_time');
+        const sys = pick(row, ['systolic']);
+        const dia = pick(row, ['diastolic']);
+        if (!day || !(sys > 50 && dia > 30)) return null;
+        const d = days.get(day);
+        d.extra = { ...(d.extra ?? {}), bloodPressure: { systolic: Math.round(sys), diastolic: Math.round(dia) } };
+        return day;
+      };
+    }
+    if (/(^|\.)height$/.test(type)) {
+      return (row) => {
+        const day = dayOf(row, 'start_time', 'create_time');
+        const v = pick(row, ['height']);
+        if (!day || !(v > 50 && v < 260)) return null;
+        const d = days.get(day);
+        d.extra = { ...(d.extra ?? {}), heightCm: Math.round(v * 10) / 10 };
+        return day;
+      };
+    }
+    if (/food_intake$/.test(type)) {
+      const MEALS: Record<string, string> = {
+        '100001': 'breakfast',
+        '100002': 'lunch',
+        '100003': 'dinner',
+        '100004': 'snack',
+        '100005': 'snack',
+        '100006': 'snack',
+      };
+      return (row) => {
+        const day = dayOf(row, 'start_time', 'create_time');
+        const kcal = pick(row, ['calorie', 'kcal', 'calories']);
+        if (!day || !(kcal >= 0)) return null;
+        const d = days.get(day);
+        const items = [...(d.extra?.food?.items ?? []), { name: (row.name ?? row.food_name ?? 'food').slice(0, 80), kcal: Math.round(kcal), meal: MEALS[row.meal_type ?? ''] ?? 'meal' }];
+        d.extra = { ...(d.extra ?? {}), food: { kcal: items.reduce((s, i) => s + i.kcal, 0), items } };
         return day;
       };
     }

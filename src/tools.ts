@@ -5,6 +5,7 @@ import { formatPlaces, TRAVEL_MODES, type Maps, type TravelMode } from './maps';
 import { ACTIVITY, bodyNumbers, formatBody, formatFoodDay, MEALS } from './health';
 import { history, type HealthData } from './healthdb';
 import { formatDay as formatWatchDay } from './healthsync';
+import { budgetAlerts, CATEGORY_KEYS, findCategory, logTxn, report, scanEmail, scanSummary, txnLine } from './money';
 import { fetchNews, formatNews } from './news';
 import type { City, Store } from './store';
 import { formatTime, localDay, REPEATS, type Repeat } from './time';
@@ -21,6 +22,8 @@ export interface ToolContext {
   health?: HealthData | null;
   /** Has the AI read a PDF (e.g. one opened from Drive) and return its text. */
   readPdf?: (name: string, pdf: Buffer) => Promise<string>;
+  /** Has the AI pull structured data out of text (no tools, no chat history). */
+  extract?: (instructions: string, data: string) => Promise<string>;
   now?: () => Date;
 }
 
@@ -151,6 +154,72 @@ const ROLEPLAY: ToolSpec[] = [
     description: 'The kanji and words sent as "of the day" recently, newest last, e.g. to quiz the user on them.',
     parameters: obj({}),
   },
+];
+
+const MONEY: ToolSpec[] = [
+  {
+    name: 'money_log',
+    description:
+      'Log money the user spent or received: from a bank or e-wallet slip photo, a receipt, a bill, a card charge, salary, or what they tell you. ' +
+      'Log several at once. Copies already logged (same reference number, or same amount within 20 minutes) are skipped, so re-sent slips are safe.',
+    parameters: obj({
+      source: oneOf(['slip', 'chat'], '"slip" for photos of slips or receipts, "chat" for what the user typed or said.'),
+      items: {
+        type: 'array',
+        description: 'Transactions.',
+        items: obj({
+          date: str('YYYY-MM-DD in the Gregorian calendar (Thai slips use the Buddhist year: 2569 = 2026), or "" for today.'),
+          time: str('HH:MM local time, or "".'),
+          amount: num('Amount actually paid or received (after any co-pay or discount), positive.'),
+          currency: str('ISO currency code, usually "THB".'),
+          category: oneOf(CATEGORY_KEYS, 'Best-fitting category. Use "own" for moves between the user\'s own accounts, "savings" for savings/investment accounts, "card_payment" for paying a credit card bill.'),
+          payee: str('Shop or person paid (or who paid the user), as written.'),
+          account: str('Paid from (or into): bank or wallet and the last digits, e.g. "ttb x123-4", or "".'),
+          ref: str('Reference / transaction number from the slip, or "".'),
+          note: str('A few words (what it was for), or "".'),
+          discount: num('Part paid by a co-pay scheme or discount, e.g. the ไทยช่วยไทย 60/40 share; 0 if none.'),
+        }),
+      },
+    }),
+  },
+  {
+    name: 'money_edit',
+    description: 'Change a logged transaction (e.g. once the user says what a transfer was for). Pass "" to keep a field.',
+    parameters: obj({ id: int('Transaction number.'), category: str(`New category (${CATEGORY_KEYS.join(', ')}), or "".`), payee: str('New payee, or "".'), note: str('New note, or "".'), amount: num('New amount, or 0 to keep.') }),
+  },
+  { name: 'money_remove', description: 'Delete a logged transaction by number.', parameters: obj({ id: int('Transaction number.') }) },
+  {
+    name: 'money_report',
+    description: "Spending, income and budget for a budget month (or a date range), by category; optionally with the transactions. Use for any question about the user's money.",
+    parameters: obj({
+      period: oneOf(['this', 'last', 'range'], '"this" budget month, "last" one, or a "range" of dates.'),
+      from: str('Range start YYYY-MM-DD, or "".'),
+      to: str('Range end YYYY-MM-DD (inclusive), or "".'),
+      category: str('Only this category, or "".'),
+      list_transactions: { type: 'boolean', description: 'Also list the transactions (with their numbers).' },
+    }),
+  },
+  {
+    name: 'budget_set',
+    description: 'Set a monthly budget: the whole month ("total") or one category. Amount 0 removes it. Also sets the day the budget month starts (payday).',
+    parameters: obj({ category: str(`"total" or a category (${CATEGORY_KEYS.join(', ')}).`), amount: num('Monthly limit in THB; 0 removes it.'), start_day: int('Day of the month the budget month starts (1-28), or 0 to keep.') }),
+  },
+];
+
+const MONEY_EMAIL: ToolSpec = {
+  name: 'money_scan_email',
+  description: 'Read recent Gmail for receipts, card alerts, transfers, bill payments, subscription charges and salary, and log new ones. Emails already read are skipped.',
+  parameters: obj({ days: int('How many days back to look (1-365).') }),
+};
+
+const PREFERENCES: ToolSpec[] = [
+  {
+    name: 'preference_add',
+    description:
+      'Save a standing instruction about how to reply (language, emoji, tone, length, format), e.g. "Reply in Thai by default". It applies to every future reply.',
+    parameters: obj({ text: str('The instruction, one short sentence.') }),
+  },
+  { name: 'preference_remove', description: 'Remove a standing preference by its number (1 = first).', parameters: obj({ number: int('Preference number.') }) },
 ];
 
 const WANIKANI: ToolSpec = {
@@ -303,7 +372,7 @@ const MAPS: ToolSpec[] = [
 
 export function toolSpecs(opts: { wanikani: boolean; google: Google | null; maps: boolean }): ToolSpec[] {
   const g = opts.google;
-  return [...CORE, ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : [])];
+  return [...CORE, ...PREFERENCES, ...MONEY, ...(g?.has('gmail') ? [MONEY_EMAIL] : []), ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : [])];
 }
 
 const STAGES = ['Lesson', 'Apprentice 1', 'Apprentice 2', 'Apprentice 3', 'Apprentice 4', 'Guru 1', 'Guru 2', 'Master', 'Enlightened', 'Burned'];
@@ -453,6 +522,86 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
         const to = /^\d{4}-\d{2}-\d{2}$/.test(s('to')) ? s('to') : localDay(now, tz);
         const rows = ctx.health.db.range(from, to);
         return ok(`Health history ${from} to ${to}, ${rows.length} days with data:\n${history(rows, s('group') === 'week' ? 'week' : 'month')}`);
+      }
+      case 'money_log': {
+        const items = Array.isArray(a.items) ? (a.items as Record<string, unknown>[]) : [];
+        if (!items.length) return fail('No transactions given.');
+        const source = s('source') === 'slip' ? 'slip' : 'chat';
+        const lines: string[] = [];
+        for (const it of items) {
+          const amount = Number(it.amount);
+          if (!(amount > 0)) {
+            lines.push(`Skipped an item with no amount (${String(it.payee ?? '?')}).`);
+            continue;
+          }
+          const str = (k: string) => String(it[k] ?? '').trim();
+          const r = logTxn(
+            ctx.store,
+            ctx.chatKey,
+            { date: str('date'), time: str('time'), amount, currency: str('currency'), category: str('category'), payee: str('payee'), account: str('account'), ref: str('ref'), note: str('note'), discount: Number(it.discount) || 0, source },
+            tz,
+            now,
+          );
+          lines.push(`${r.duplicate ? 'Already logged' : 'Logged'} ${txnLine(r.txn)}`);
+        }
+        const alerts = budgetAlerts(ctx.store, ctx.chatKey, now, tz);
+        return ok([...lines, ...alerts, '', report(ctx.store, ctx.chatKey, now, tz)].join('\n'));
+      }
+      case 'money_edit': {
+        const patch: Record<string, unknown> = {};
+        if (s('category')) patch.category = findCategory(s('category')) ?? s('category');
+        if (s('payee')) patch.payee = s('payee').slice(0, 120);
+        if (s('note')) patch.note = s('note').slice(0, 120);
+        if (Number(a.amount) > 0) patch.amount = Math.round(Number(a.amount) * 100) / 100;
+        const t = ctx.store.updateMoney(ctx.chatKey, Number(a.id), patch);
+        return t ? ok(`Updated ${txnLine(t)}`) : fail(`No transaction #${a.id}.`);
+      }
+      case 'money_remove': {
+        const t = ctx.store.removeMoney(ctx.chatKey, Number(a.id));
+        return t ? ok(`Removed ${txnLine(t)}`) : fail(`No transaction #${a.id}.`);
+      }
+      case 'money_report': {
+        const period = s('period');
+        const range = period === 'range' && /^\d{4}-\d{2}-\d{2}$/.test(s('from')) && /^\d{4}-\d{2}-\d{2}$/.test(s('to'));
+        const category = s('category') ? findCategory(s('category')) ?? undefined : undefined;
+        return ok(report(ctx.store, ctx.chatKey, now, tz, { back: period === 'last' ? 1 : 0, ...(range ? { from: s('from'), to: s('to') } : {}), category, list: a.list_transactions === true }));
+      }
+      case 'budget_set': {
+        const amount = Math.max(0, Math.round(Number(a.amount) || 0));
+        const b = ctx.store.budget(ctx.chatKey);
+        const startDay = Number(a.start_day);
+        if (startDay >= 1 && startDay <= 28) ctx.store.updateBudget(ctx.chatKey, { startDay });
+        const cat = s('category').toLowerCase();
+        if (cat && cat !== 'total') {
+          const key = findCategory(cat);
+          if (!key) return fail(`Unknown category "${s('category')}". Use one of: ${CATEGORY_KEYS.join(', ')}.`);
+          const categories = { ...(b.categories ?? {}) };
+          if (amount) categories[key] = amount;
+          else delete categories[key];
+          ctx.store.updateBudget(ctx.chatKey, { categories });
+        } else if (cat === 'total' || amount) ctx.store.updateBudget(ctx.chatKey, { monthly: amount || undefined });
+        return ok(report(ctx.store, ctx.chatKey, now, tz));
+      }
+      case 'money_scan_email': {
+        if (!ctx.google?.has('gmail')) return fail('Gmail is not connected.');
+        if (!ctx.extract) return fail('Email scanning is not available here.');
+        const r = await scanEmail({ google: ctx.google, store: ctx.store, extract: ctx.extract }, ctx.chatKey, { days: Number(a.days) || 30, now, timeZone: tz });
+        return ok(`${scanSummary(r)}\n${UNTRUSTED}`);
+      }
+      case 'preference_add': {
+        const text = s('text').slice(0, 200);
+        if (!text) return fail('Empty preference.');
+        const prefs = ctx.store.settings().preferences ?? [];
+        if (prefs.some((p) => p.toLowerCase() === text.toLowerCase())) return ok('Already saved.');
+        ctx.store.updateSettings({ preferences: [...prefs, text].slice(-20) });
+        return ok(`Saved preference #${prefs.length + 1}: ${text}`);
+      }
+      case 'preference_remove': {
+        const prefs = ctx.store.settings().preferences ?? [];
+        const i = Number(a.number) - 1;
+        if (!(i >= 0 && i < prefs.length)) return fail(`No preference #${a.number}. There are ${prefs.length}.`);
+        ctx.store.updateSettings({ preferences: prefs.filter((_, j) => j !== i) });
+        return ok(`Removed: ${prefs[i]}`);
       }
       case 'roleplay_start':
         if (!s('scenario')) return fail('Describe the scene.');

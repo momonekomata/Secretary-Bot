@@ -24,6 +24,8 @@ interface TgMessage {
   text?: string;
   caption?: string;
   photo?: TgFile[];
+  /** Set on each photo of an album sent together. */
+  media_group_id?: string;
   voice?: TgFile;
   audio?: TgFile;
   document?: TgFile;
@@ -55,6 +57,10 @@ export class Telegram implements Channel {
   private readonly api: string;
   private readonly fileApi: string;
   private stopped = false;
+  /** Albums being collected: Telegram delivers each photo of an album as its own message. */
+  private albums = new Map<string, { msgs: TgMessage[]; timer?: NodeJS.Timeout; done: Promise<void>; resolve: () => void }>();
+  /** How long to wait for the rest of an album. */
+  albumWaitMs = 1500;
 
   constructor(
     private readonly cfg: Config['telegram'],
@@ -159,6 +165,7 @@ export class Telegram implements Channel {
       ['word', 'Japanese word of the day'],
       ['food', "Today's food and calories"],
       ['bmi', 'BMI, BMR and calorie target'],
+      ['budget', 'Spending this month and budgets'],
       ['health', 'Watch data: steps, heart rate, workouts'],
       ['roleplay', 'Start a roleplay or Japanese practice scene'],
       ['todo', 'Show to-do list'],
@@ -168,6 +175,8 @@ export class Telegram implements Channel {
       ['gtask', 'Google Tasks (list, or add with text)'],
       ['topics', 'News watchlist'],
       ['persona', 'Choose my personality'],
+      ['prefs', 'Your standing preferences (language, emoji...)'],
+      ['export', 'Download your data'],
       ['settings', 'AI model, effort, voice translation'],
       ['stats', 'AI usage and cost'],
       ['status', 'Check connections'],
@@ -196,6 +205,33 @@ export class Telegram implements Channel {
     if (u.callback_query) return this.handleCallback(u.callback_query);
     const msg = u.message;
     if (!msg?.from) return;
+    if (msg.media_group_id && msg.photo) return this.collectAlbum(msg);
+    return this.handleMessage(msg);
+  }
+
+  /** Waits for the rest of an album, then handles all its photos as one message (e.g. several payment slips). */
+  private collectAlbum(msg: TgMessage): Promise<void> {
+    const key = `${msg.chat.id}:${msg.media_group_id}`;
+    let album = this.albums.get(key);
+    if (!album) {
+      let resolve = () => {};
+      const done = new Promise<void>((r) => (resolve = r));
+      album = { msgs: [], done, resolve };
+      this.albums.set(key, album);
+    }
+    const a = album;
+    a.msgs.push(msg);
+    clearTimeout(a.timer);
+    a.timer = setTimeout(() => {
+      this.albums.delete(key);
+      const first = a.msgs.find((m) => m.caption) ?? a.msgs[0];
+      void this.handleMessage(first, a.msgs.filter((m) => m !== first).map((m) => m.photo!)).finally(a.resolve);
+    }, this.albumWaitMs);
+    return a.done;
+  }
+
+  private async handleMessage(msg: TgMessage & { from?: TgUser }, morePhotos: TgFile[][] = []) {
+    if (!msg.from) return;
     const chatId = String(msg.chat.id);
     const incoming: IncomingMessage = {
       platform: 'telegram',
@@ -212,7 +248,10 @@ export class Telegram implements Channel {
     try {
       if (this.secretary.isSlow(incoming) && this.cfg.allowedUsers.includes(incoming.userId)) typing = this.keepTyping(chatId);
       if (this.cfg.allowedUsers.includes(incoming.userId)) {
-        if (msg.photo) incoming.images = await this.downloadPhoto(msg.photo);
+        if (msg.photo) {
+          const all = await Promise.all([msg.photo, ...morePhotos].slice(0, 10).map((p) => this.downloadPhoto(p)));
+          incoming.images = all.flat();
+        }
         if (voice) incoming.audio = await this.downloadAudio(voice);
         if (msg.document) incoming.file = await this.downloadDocument(msg.document);
       }

@@ -34,7 +34,7 @@ export class BudgetExceeded extends Error {}
 
 const PROVIDER_NAMES: Record<ProviderName, string> = { gemini: 'Gemini', claude: 'Claude' };
 
-export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: boolean, personality = ''): string {
+export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: boolean, personality = '', preferences: string[] = []): string {
   return [
     `You are ${cfg.botName}, the user's personal secretary and news curator, living in their Telegram and LINE chats.`,
     personality
@@ -43,7 +43,11 @@ export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: b
       : '',
     'You help with planning, scheduling, email, research, writing and translation, and keep the user up to date on news they care about. ' +
       "You are also the user's Japanese study companion: they study kanji with WaniKani and grammar with Bunpro.",
-    'Reply in the language the user writes in (often Thai, English, or Japanese). When you use Japanese words for a learner, add the reading in hiragana and a short gloss the first time.',
+    'Reply in the language the user writes in (often Thai, English, or Japanese), unless their standing preferences below say otherwise. When you use Japanese words for a learner, add the reading in hiragana and a short gloss the first time.',
+    preferences.length
+      ? `The user's standing preferences. Follow them in every reply, in every personality and scene, unless the user asks otherwise in the moment:\n${preferences.map((p) => `• ${p}`).join('\n')}`
+      : '',
+    'When the user states a lasting preference about how you should reply ("from now on…", "always…", "stop using…"), save it with preference_add (and remove outdated ones with preference_remove). Facts about the user go to remember instead.',
     'Your reply is shown in a chat bubble as plain text: no Markdown headings, tables, bold, or code fences. Keep it short and conversational; use simple "•" bullets only when a list really helps.',
     'Use your tools whenever they help (memories, reminders, to-dos, news, weather, web search' +
       (google ? ', Google Calendar, Gmail, Google Tasks and Drive' : '') +
@@ -55,6 +59,14 @@ export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: b
       'macros and log it with food_log_add (no need to ask first; they can remove an entry), then reply with what you logged and how the day stands. ' +
       'You can work out BMI, BMR and calorie targets from their body profile, and read their Samsung watch data (steps, heart rate, SpO2, ' +
       'workouts, smart-scale readings) with watch_health_data when connected. Health numbers are estimates, not medical advice; be encouraging, never judgemental, and suggest a doctor for anything worrying.',
+    'You also look after the user\'s money. When they send a payment or transfer slip (Thai bank apps, PromptPay, e-wallets, เป๋าตัง) or a receipt, ' +
+      'read the date and time (Thai slips use the Buddhist year: 2569 = 2026), the amount actually paid, the shop or person paid, the account it came from and the reference number, ' +
+      'and log it with money_log without asking first (several slips go in one call). For co-pay schemes such as ไทยช่วยไทย 60/40, log what the user paid and put the scheme\'s share in discount. ' +
+      'Pick the category yourself: a restaurant is food, a petrol station is transport, a savings cooperative (สหกรณ์ออมทรัพย์) or investment is savings, the user\'s own name on both sides is own. ' +
+      'For a transfer to a person or a company whose purpose isn\'t clear, log it as transfer or other and ask in one short question what it was for, then fix it with money_edit. ' +
+      'Reply with one short line per transaction and how the month stands against the budget. A slip is not a food photo: never add a slip to the food diary on your own. ' +
+      'Answer money questions with money_report, set budgets with budget_set, and when the user mentions spending or income in chat ("paid 350 for a haircut", "salary came in"), log it.' +
+      (google ? ' You can also read their email for receipts, card alerts, bill payments, subscriptions and salary with money_scan_email.' : ''),
     'You are also a friendly companion to chat with about anything, and you can run roleplay scenes and stories when asked ' +
       '(including Japanese conversation practice, where you play a character in a real-life scene and gently correct mistakes after each reply). ' +
       'During a roleplay, stay in the scene until the user ends it, but still help at once with real tasks or anything urgent. ' +
@@ -94,9 +106,10 @@ export class Agent {
   /** The system prompt. Rebuilt only when the name or personality changes, so prompt caches stay warm. */
   private get system(): string {
     const s = this.store.settings();
-    const key = `${this.botName}\u0000${s.persona ?? ''}`;
+    const prefs = s.preferences ?? [];
+    const key = `${this.botName}\u0000${s.persona ?? ''}\u0000${prefs.join('\u0001')}`;
     if (this.systemCache?.key !== key) {
-      this.systemCache = { key, text: systemPrompt({ botName: this.botName, persona: this.cfg.persona }, !!this.google, s.persona ?? '') };
+      this.systemCache = { key, text: systemPrompt({ botName: this.botName, persona: this.cfg.persona }, !!this.google, s.persona ?? '', prefs) };
     }
     return this.systemCache.text;
   }
@@ -280,6 +293,7 @@ export class Agent {
           maps: this.maps,
           health: this.health,
           readPdf: (n, pdf) => this.readPdf(n, pdf),
+          extract: (instructions, data) => this.extract(instructions, data, 'money'),
           now: this.now,
         }),
       onUsage: (u) => this.recordUsage(u, kind),
@@ -313,6 +327,23 @@ export class Agent {
       onUsage: (u) => this.recordUsage(u, 'document'),
     });
     return result.text || '(no text found in the PDF)';
+  }
+
+  /** Pulls structured data (JSON) out of text, with no tools, history or personality. */
+  async extract(instructions: string, data: string, kind: string): Promise<string> {
+    this.checkBudget();
+    const result = await this.provider().run({
+      model: this.model,
+      effort: 'low',
+      system: instructions,
+      history: [],
+      userText: data,
+      tools: [],
+      webTools: false,
+      runTool: async () => ({ content: 'No tools in this mode.', isError: true }),
+      onUsage: (u) => this.recordUsage(u, kind),
+    });
+    return result.text;
   }
 
   /**

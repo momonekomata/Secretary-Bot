@@ -91,6 +91,8 @@ export class Scheduler {
         { key: 'weather', at: s.weather, run: () => this.broadcast(() => b.weatherReport()) },
         { key: 'briefing', at: s.briefing, run: () => this.broadcast((chat) => b.morning(chat)) },
         { key: 'weekend', at: s.weekend, weekday: s.weekendDay, run: () => this.broadcast(() => b.weekendPlanner()) },
+        // Email is read once (into the first chat); every chat gets its own budget warnings.
+        { key: 'money', at: s.money, run: () => this.broadcast((chat) => b.moneyCheck(chat, chat === this.cfg.notifyChats[0])) },
       );
     }
     const health = this.health;
