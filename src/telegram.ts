@@ -179,6 +179,7 @@ export class Telegram implements Channel {
       ['export', 'Download your data'],
       ['settings', 'AI model, effort, voice translation'],
       ['stats', 'AI usage and cost'],
+      ['limit', 'Daily AI spending limits (USD)'],
       ['status', 'Check connections'],
       ['help', 'Everything I can do'],
     ];

@@ -82,13 +82,13 @@ async function status(): Promise<string> {
     `Scheduled messages go to: ${config.notifyChats.join(', ') || '⚠️ nobody (set BOT_NOTIFY_CHATS to your chat from /id)'}`,
     `Kanji & word of the day ${config.schedule.japanese || 'off'}, weather ${config.schedule.weather || 'off'}, briefing ${config.schedule.briefing || 'off'}, weekend planner ${config.schedule.weekendDay} ${config.schedule.weekend || 'off'}, cleanup ${config.schedule.cleanup || 'off'} (${config.timezone})`,
   );
-  const b = config.billing;
+  const b = agent.limits();
   const limits = (l: { warnUsd: number | null; capUsd: number | null }) =>
     `${l.warnUsd !== null ? `, warn at $${l.warnUsd}` : ''}${l.capUsd !== null ? `, cap $${l.capUsd}` : ''}`;
   lines.push(
-    `Spending today: $${agent.spentToday().toFixed(4)}${limits(b)}`,
-    `  Gemini $${agent.spentToday('gemini').toFixed(4)}${limits(b.providers.gemini)}`,
-    `  Claude $${agent.spentToday('claude').toFixed(4)}${limits(b.providers.claude)}`,
+    `Spending today: $${agent.spentToday().toFixed(4)}${limits(b.all)} (change with /limit)`,
+    `  Gemini $${agent.spentToday('gemini').toFixed(4)}${limits(b.gemini)}`,
+    `  Claude $${agent.spentToday('claude').toFixed(4)}${limits(b.claude)}`,
   );
   return lines.join('\n');
 }

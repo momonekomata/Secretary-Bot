@@ -366,7 +366,7 @@ backup file in LINE (as links). Pick one option:
 | The bot doesn't answer in Telegram | Is the bot running? Is your user id in setup? Send `/id`, then `/status`. |
 | "My AI API key was rejected" | Run `npm run setup` and paste the key again. |
 | "The selected model … needs ANTHROPIC_API_KEY" | You picked a Claude model without a Claude key. Pick a Gemini model in `/settings`, or add the key. |
-| "Daily spending cap reached" / "Gemini's (or Claude's) daily cap reached" | The bot paused that AI to protect your wallet. It unlocks at midnight; meanwhile switch to the other AI in `/settings`, or raise `GEMINI_DAILY_HARD_LIMIT_USD` / `CLAUDE_DAILY_HARD_LIMIT_USD`. |
+| "Daily spending cap reached" / "Gemini's (or Claude's) daily cap reached" | The bot paused that AI to protect your wallet. It unlocks at midnight; meanwhile switch to the other AI in `/settings`, or raise the limit in chat with `/limit gemini 1` (or `/limit claude 5`). |
 | Voice notes: "need a Gemini API key" | Voice notes always use Gemini. Add `GEMINI_API_KEY` with `npm run setup`. |
 | "Google sign-in has expired" | Run `npm run google-auth` again (and make sure you did Step 12.4, Publish app). On the NAS, copy the new `token.json` into `data`. |
 | `/status` says a Gemini model isn't available | Google may have renamed it. Pick another model in `/settings`. |
