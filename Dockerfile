@@ -2,6 +2,8 @@
 # .github/workflows/docker.yml and published to ghcr.io. To build it yourself:
 #   docker build -t secretary-bot .
 FROM node:22-slim
+# ffmpeg converts LINE voice messages for Gemini and encodes spoken replies.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force

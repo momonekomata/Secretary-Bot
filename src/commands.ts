@@ -2,6 +2,7 @@ import { BudgetExceeded, type Agent } from './agent';
 import { archiveUsage, usageStats, type Briefings } from './briefings';
 import { EFFORTS, type Config, type Effort } from './config';
 import { formatEmails, formatEvents, formatTasks } from './google';
+import { formatPlaces } from './maps';
 import { MODELS, modelInfo } from './models';
 import type { Store } from './store';
 import { geocode } from './weather';
@@ -16,6 +17,8 @@ export interface CommandReply {
   text: string;
   buttons?: Button[][];
   file?: { name: string; data: Buffer };
+  /** Text to also send as a spoken voice message. */
+  speak?: string;
 }
 
 export interface CommandContext {
@@ -31,7 +34,7 @@ export interface CommandContext {
 }
 
 /** Commands that call an AI or an outside API: channels show "typing…" while they run. */
-export const SLOW_COMMANDS = new Set(['/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/drive', '/gtask', '/setcity']);
+export const SLOW_COMMANDS = new Set(['/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say']);
 
 export const HELP = [
   'Hi! I am your personal secretary and news curator. Just talk to me, send a photo, or send a voice note.',
@@ -39,12 +42,20 @@ export const HELP = [
   '🗓️ Secretary: /todo, /add <task>, /done <id>, /clear',
   '📰 News: /news [topic], /topics, /addtopic <topic>, /removetopic <topic>',
   '🌅 Briefings: /brief (morning briefing now), /weather [city], /weekend, /setcity <city>',
-  '📧 Google: /calendar [days], /inbox, /gtask [title], /drive [search]',
+  '📧 Google: /calendar [days], /inbox, /mail <search>, /gtask [title], /gdone <number>, /drive [search]',
+  '📍 Places: share your location, /places <what>, /setcity <city>',
+  '🔊 Voice: send a voice note; /voice off|notes|always, /say <text>',
   '⚙️ Settings: /settings (AI model, thinking effort, voice translation), /stats, /status, /cleanup',
   '💬 Chat: /reset (forget this conversation, keep memories), /id',
   '',
   'Try: "Remind me at 9pm to do my reviews", "Do I have time for the dentist tomorrow afternoon?", or "Draft an email to sarah@example.com about the Q4 deck".',
 ].join('\n');
+
+const VOICE_MODES: [string, 'off' | 'voice-notes' | 'always'][] = [
+  ['🔇 text only', 'off'],
+  ['🔊 to voice notes', 'voice-notes'],
+  ['🔊 always', 'always'],
+];
 
 const LANGUAGES: [string, string][] = [
   ['English', 'English'],
@@ -57,12 +68,14 @@ export function settingsView(ctx: CommandContext, notice = ''): CommandReply {
   const s = store.settings();
   const current = modelInfo(agent.model);
   const translateTo = s.translateTo ?? cfg.defaultTranslateTo;
+  const voiceMode = s.voiceReplies ?? cfg.defaultVoiceReplies;
   const text = [
     notice,
     '⚙️ Settings',
     `AI model: ${current.label} (${current.id})`,
     `Thinking effort: ${agent.effort}`,
     `Voice notes: transcribe and translate to ${translateTo}`,
+    `Spoken replies: ${voiceMode === 'off' ? 'off' : voiceMode === 'always' ? 'always' : 'when you send a voice note'}`,
     `Weather city: ${s.city?.name ?? cfg.weather.defaultCity}`,
     `News topics: ${(s.newsTopics ?? cfg.news.defaultTopics).join(', ') || 'none'}`,
     '',
@@ -77,6 +90,7 @@ export function settingsView(ctx: CommandContext, notice = ''): CommandReply {
       ...MODELS.map((m) => [{ label: mark(m.id === current.id, `${m.label}${agent.hasProvider(m.provider) ? '' : ' (no key)'}`), command: `/model ${m.id}` }]),
       EFFORTS.map((e) => ({ label: mark(e === agent.effort, `🧠 ${e}`), command: `/effort ${e}` })),
       LANGUAGES.map(([label, lang]) => ({ label: mark(lang === translateTo, `🎙️→${label}`), command: `/translate ${lang}` })),
+      VOICE_MODES.map(([label, mode]) => ({ label: mark(mode === voiceMode, label), command: `/voice ${mode}` })),
     ],
   };
 }
@@ -130,6 +144,16 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         store.updateSettings({ translateTo: arg.slice(0, 40) });
         return settingsView(ctx, `✅ Voice notes will be translated into ${arg}.\n`);
       }
+
+      case '/voice': {
+        const mode = arg === 'notes' ? 'voice-notes' : arg;
+        if (!['off', 'voice-notes', 'always'].includes(mode)) return { text: 'Use /voice off, /voice notes (reply to voice notes with voice) or /voice always.' };
+        store.updateSettings({ voiceReplies: mode as 'off' | 'voice-notes' | 'always' });
+        return settingsView(ctx, `✅ Spoken replies: ${mode}.\n`);
+      }
+      case '/say':
+        if (!arg) return { text: 'What should I say? e.g. /say おはようございます' };
+        return { text: '', speak: arg };
 
       // --- usage ---
       case '/stats':
@@ -206,13 +230,31 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
       case '/inbox':
         if (!google) return needGoogle();
         return { text: `📥 Unread (Primary):\n${formatEmails(await google.unreadEmails(10))}` };
+      case '/mail': {
+        if (!google) return needGoogle();
+        if (!arg) return { text: 'What should I search for? e.g. /mail from:ken contract newer_than:14d' };
+        return { text: `🔎 Gmail results for "${arg}":\n${formatEmails(await google.searchEmails(arg, 10))}\n\nAsk me about any of them to read it in full.` };
+      }
       case '/gtask':
         if (!google) return needGoogle();
         if (arg) {
           await google.addTask(arg);
           return { text: `☑️ Added to Google Tasks: ${arg}` };
         }
-        return { text: `☑️ Google Tasks:\n${formatTasks(await google.tasks())}` };
+        return { text: `☑️ Google Tasks:\n${formatTasks(await google.tasks(), true)}\n\nTick one off with /gdone <number>.` };
+      case '/gdone': {
+        if (!google) return needGoogle();
+        const tasks = await google.tasks();
+        const t = /^\d+$/.test(arg) ? tasks[Number(arg) - 1] : tasks.find((x) => arg && x.title.toLowerCase().includes(arg.toLowerCase()));
+        if (!t) return { text: `No open Google Task "${arg}". See /gtask.` };
+        await google.completeTask(t.id);
+        return { text: `✅ Done in Google Tasks: ${t.title}` };
+      }
+      case '/places': {
+        if (!agent.maps) return { text: 'Google Maps is not connected. Add GOOGLE_MAPS_API_KEY (see SETUP-GUIDE.md, Part 3).' };
+        if (!arg) return { text: 'What are you looking for? e.g. /places ramen near Asok' };
+        return { text: `📍 ${formatPlaces(await agent.maps.searchPlaces(arg, store.settings().city))}` };
+      }
       case '/drive': {
         if (!google) return needGoogle();
         const files = await google.driveSearch(arg);

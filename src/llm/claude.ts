@@ -31,6 +31,11 @@ export class ClaudeProvider implements Provider {
         : []),
     ];
     const userContent: Anthropic.Beta.BetaContentBlockParam[] = [
+      ...(req.documents ?? []).map((d) => ({
+        type: 'document' as const,
+        source: { type: 'base64' as const, media_type: d.mediaType, data: d.data },
+        title: d.name,
+      })),
       ...(req.images ?? []).map((img) => ({
         type: 'image' as const,
         source: { type: 'base64' as const, media_type: img.mediaType, data: img.data },

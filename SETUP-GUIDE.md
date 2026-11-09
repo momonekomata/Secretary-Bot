@@ -4,7 +4,7 @@ This guide assumes you have never run a program like this before. Go slowly and 
 
 1. **Part 1 — Telegram** on your computer (about 20 minutes). Start here.
 2. **Part 2 — Morning briefings** and alerts (5 minutes).
-3. **Part 3 — Connect Google** Calendar, Gmail, Tasks and Drive (about 20 minutes).
+3. **Part 3 — Connect Google** Calendar, Gmail, Tasks, Drive, Docs, Sheets, Contacts and Maps (about 20 minutes).
 4. **Part 4 — Run it 24/7 on your NAS** with Docker, with automatic updates.
 5. **Part 5 — LINE** (optional).
 
@@ -118,7 +118,12 @@ In Telegram, search for your bot's username, open it, and press **Start**. It re
 - Hold the 🎤 button and **send a voice note** (in Thai, English or Japanese): it transcribes it, translates it, summarises it,
   and creates any to-dos or reminders you mention.
 - Send a photo of Japanese text and ask "what does this say?"
-- `Remind me in 10 minutes to drink water`
+- Send a **PDF, Word file or text file** and ask about it ("what's the total on this invoice?").
+- Tap 📎 → **Location** to share where you are: weather and nearby places use it.
+- `Remind me in 10 minutes to drink water`, or `Remind me every weekday at 9 to check email` (repeating).
+- `/voice always` makes it answer with a spoken voice message too (`/voice off` to stop, `/say สวัสดี` to hear something).
+  Spoken replies need the free **ffmpeg** program on your computer (Mac: `brew install ffmpeg`; Windows: `winget install ffmpeg`).
+  It is already included on the NAS (Part 4).
 
 **Each time you want to use the bot later:** open a terminal in the `Secretary-Bot-main` folder (Step 5) and run `npm start`.
 To keep it running all the time, see Part 4.
@@ -141,10 +146,22 @@ Change the times in `.env` (`WEATHER_TIME`, `BRIEFING_TIME`, `WEEKEND_PLANNER_TI
 
 ---
 
-## Part 3 — Connect Google (Calendar, Gmail, Tasks, Drive)
+## Part 3 — Connect Google (Calendar, Gmail, Tasks, Drive, Docs, Sheets, Contacts, Maps)
 
-This lets the bot read your calendar, unread email, Google Tasks and Drive, add calendar events and tasks, and write **email drafts**.
-It never sends email itself; drafts wait in Gmail for you to check and send.
+This lets the bot:
+- **Calendar**: see all your calendars (including shared and family ones), add, move, change and delete events.
+- **Gmail**: read and search all your mail ("what did Ken say about the contract last week?") and write **drafts**.
+  It never sends email itself; drafts wait in Gmail for you to check and send.
+- **Tasks**: list, add and tick off Google Tasks (`/gtask`, `/gdone 2`).
+- **Drive**: find files and read them (Google Docs, Sheets, Slides, PDFs, Word).
+- **Docs and Sheets**: create documents ("write up these meeting notes as a Google Doc") and add rows ("log 120 baht lunch in my expenses sheet").
+- **Contacts**: look up email addresses and phone numbers, so "draft an email to Ken" finds Ken.
+
+**Google Keep can't be connected**: Google only offers its Keep API to company (Workspace) accounts, not personal Gmail.
+Use Google Tasks or a Google Doc for notes instead.
+
+> **Already connected Google before?** The bot now asks for a few more permissions. Do Step 11.3 (enable the new APIs) and Step 14 (sign in again);
+> `/status` tells you if anything is still missing.
 
 ### Step 11. Create a Google Cloud project
 
@@ -155,6 +172,9 @@ It never sends email itself; drafts wait in Gmail for you to check and send.
    - https://console.cloud.google.com/apis/library/gmail.googleapis.com
    - https://console.cloud.google.com/apis/library/tasks.googleapis.com
    - https://console.cloud.google.com/apis/library/drive.googleapis.com
+   - https://console.cloud.google.com/apis/library/docs.googleapis.com
+   - https://console.cloud.google.com/apis/library/sheets.googleapis.com
+   - https://console.cloud.google.com/apis/library/people.googleapis.com (Contacts)
 
    *(If you have the `gcloud` tool installed, `npm run setup-gcp` does this step for you.)*
 
@@ -187,9 +207,23 @@ Google renames these pages from time to time; look for the closest match.
    (If the browser instead shows "This site can't be reached", copy the whole address from the address bar, paste it into the terminal, and press Enter.)
 5. Start the bot again with `npm start`.
 
-Try `/calendar`, `/inbox`, `/gtask`, or just ask: *"Do I have time for a dentist appointment tomorrow afternoon?"* or
-*"Draft an email to sarah@example.com about the Q4 deck."* Voice notes like *"add a meeting with Ken on Friday at 3"* now go
-straight into Google Calendar and Google Tasks.
+Try `/calendar`, `/inbox`, `/mail from:ken contract`, `/gtask`, or just ask: *"Do I have time for a dentist appointment tomorrow afternoon?"*,
+*"Move my dentist appointment to 5pm"*, *"Draft an email to Ken about the Q4 deck"* or *"Summarise the budget doc in my Drive."*
+Voice notes like *"add a meeting with Ken on Friday at 3"* go straight into Google Calendar and Google Tasks.
+
+### Step 15 (optional). Google Maps: nearby places and travel times
+
+Maps works differently: it needs an **API key** and a **billing account** on your Google Cloud project (Google gives a monthly free
+allowance; a personal bot rarely goes past it, but Google requires a card).
+
+1. Add billing: https://console.cloud.google.com/billing → link a billing account to the `Secretary Bot` project.
+2. Enable **Places API (New)** and **Routes API**:
+   https://console.cloud.google.com/apis/library/places.googleapis.com and https://console.cloud.google.com/apis/library/routes.googleapis.com
+3. https://console.cloud.google.com/apis/credentials → **Create credentials** → **API key**. Copy it.
+   (Recommended: **Edit API key** → **API restrictions** → restrict it to those two APIs.)
+4. `npm run setup` → paste it at **Google Maps API key**. Restart the bot.
+
+Then try `/places ramen near Asok`, or *"How long to Don Mueang airport by car right now?"*
 
 ---
 
@@ -199,17 +233,17 @@ On the NAS the bot runs as a **Docker container**. A second container, **Watchto
 reaches GitHub: each push to the `main` branch builds a new image (GitHub Actions), and Watchtower installs it within about 5 minutes.
 The bot then messages you "✅ updated and running".
 
-### Step 15. Prepare on your computer
+### Step 16. Prepare on your computer
 
 Do Parts 1–3 on your computer first, so that the `data` folder holds your `.env` (written by `npm run setup`), `credentials.json`
 and `token.json`. Stop the bot on your computer afterwards: only one copy should run at a time.
 
-### Step 16. Make the image downloadable (once)
+### Step 17. Make the image downloadable (once)
 
 GitHub publishes the image after code reaches the `main` branch. The first time, it's private. Make it public (it contains no keys):
 on GitHub open your profile → **Packages** → **secretary-bot** → **Package settings** → **Change visibility** → **Public**.
 
-### Step 17. Set up the folder on the NAS
+### Step 18. Set up the folder on the NAS
 
 1. On the NAS (e.g. Synology **File Station**), create a folder such as `docker/secretary-bot`.
 2. Upload **`docker-compose.yml`** (from the `Secretary-Bot-main` folder) into it.
@@ -217,7 +251,7 @@ on GitHub open your profile → **Packages** → **secretary-bot** → **Package
    (`.env` is a hidden file on Mac: in Finder press **⌘ Shift .** to show it.)
 4. If your time zone isn't Bangkok, open `docker-compose.yml` and change both `TZ=Asia/Bangkok` lines.
 
-### Step 18. Start it
+### Step 19. Start it
 
 - **Synology:** open **Container Manager** → **Project** → **Create**. Name `secretary-bot`, path: the `docker/secretary-bot` folder.
   It finds `docker-compose.yml` → **Next** → **Done**. Both containers start.
@@ -234,7 +268,7 @@ LINE sends messages to the bot over the internet, so the bot needs a public web 
 
 > LINE renames its buttons from time to time. If a button below has a slightly different name, look for the closest match.
 
-### Step 19. Create a LINE Official Account with the Messaging API
+### Step 20. Create a LINE Official Account with the Messaging API
 
 1. Go to **https://developers.line.biz/console/** and log in with your LINE account.
 2. Create a **Provider** (any name, e.g. your own name).
@@ -242,7 +276,7 @@ LINE sends messages to the bot over the internet, so the bot needs a public web 
 4. In **LINE Official Account Manager**, open **Settings** → **Messaging API** → **Enable Messaging API**, and pick the provider you made.
 5. In Official Account Manager open **Response settings** and turn **Auto-response messages** **off** and **Webhook** **on**.
 
-### Step 20. Copy the two LINE keys
+### Step 21. Copy the two LINE keys
 
 Back in the **LINE Developers console**, open your provider → your channel:
 - **Basic settings** tab → copy **Channel secret**.
@@ -250,15 +284,34 @@ Back in the **LINE Developers console**, open your provider → your channel:
 
 Stop the bot (**Ctrl + C**), run `npm run setup`, keep the old answers, and paste these two. Leave **Your LINE user id** empty. Run `npm start`.
 
-### Step 21. Give the bot a public address and connect LINE
+### Step 22. Try it with a temporary address
 
 1. Open a **second** terminal and run `npx cloudflared tunnel --url http://localhost:8787`. Copy the `https://….trycloudflare.com` address it prints.
 2. LINE Developers console → **Messaging API** tab → **Webhook URL** → **Edit** → paste the address with `/line` at the end → **Update** → **Verify** (should say Success) → turn on **Use webhook**.
 3. Scan the **QR code** on that page with LINE, add the bot as a friend, and send it a message. It replies with your LINE user id (starts with `U`).
 4. **Ctrl + C** in the first terminal, `npm run setup` (paste the id), `npm start`.
 
-The cloudflared address changes every time you start it. For LINE to work permanently on the NAS, the NAS needs a fixed public HTTPS
-address (for example a Cloudflare Tunnel with your own domain, or your NAS's reverse proxy) pointing at port 8787.
+The cloudflared address changes every time you start it, so this is only for trying LINE out.
+
+### Step 23. A permanent address on the NAS
+
+With a permanent address the bot also connects the LINE webhook **by itself**, and can send **spoken replies** and the nightly
+backup file in LINE (as links). Pick one option:
+
+**Option A — Tailscale Funnel (free, no domain needed)**
+1. Create a free account at **https://tailscale.com**.
+2. On the NAS install Tailscale (Synology: **Package Center** → search **Tailscale** → Install) and sign in.
+3. Turn on Funnel: in the Tailscale admin console (**https://login.tailscale.com/admin**) → **Access controls**, allow Funnel
+   (the page offers a button to add it), and under **DNS** enable **HTTPS certificates**.
+4. SSH into the NAS and run `tailscale funnel --bg 8787`. It prints an address like `https://my-nas.tail1234.ts.net`.
+
+**Option B — Cloudflare Tunnel (if you own a domain on Cloudflare)**
+1. Cloudflare dashboard → **Zero Trust** → **Networks** → **Tunnels** → **Create a tunnel** (Cloudflared). Copy the token.
+2. Add a **public hostname**, e.g. `bot.yourdomain.com`, pointing to `http://secretary-bot:8787`.
+3. In `docker-compose.yml`, uncomment the `cloudflared` service and paste the token. Restart the project.
+
+**Then, for either option:** add `PUBLIC_URL=https://your-address` (no `/line` at the end) to `data/.env` on the NAS, and restart the
+`secretary-bot` container. Check with `/status` (it shows the public address) and send the bot a message in LINE.
 
 ---
 
@@ -276,8 +329,12 @@ address (for example a Cloudflare Tunnel with your own domain, or your NAS's rev
 | Voice notes: "need a Gemini API key" | Voice notes always use Gemini. Add `GEMINI_API_KEY` with `npm run setup`. |
 | "Google sign-in has expired" | Run `npm run google-auth` again (and make sure you did Step 12.4, Publish app). On the NAS, copy the new `token.json` into `data`. |
 | `/status` says a Gemini model isn't available | Google may have renamed it. Pick another model in `/settings`. |
+| "Google needs one more permission" / `/status` lists missing Google features | Enable the APIs in Step 11.3, then run `npm run google-auth` again. |
+| No spoken reply, or LINE voice messages fail | Spoken replies and LINE voice need ffmpeg (included on the NAS; on your computer install it, see Step 10). In LINE they also need `PUBLIC_URL` (Step 23). |
+| "I can't read … yet" for a file | PDFs, Word (.docx), text and CSV files and images work. For Excel files, upload to Google Sheets and ask about it there. |
+| Maps says `REQUEST_DENIED` or 403 | Billing isn't linked, or Places API (New) / Routes API isn't enabled for the key (Step 15). |
 | `Error: listen EADDRINUSE :8787` | The bot is already running in another window. Close it, or press Ctrl + C there. |
-| NAS: `pull access denied` / `unauthorized` for ghcr.io | Do Step 16 (make the package public), or check the GitHub Actions run finished. |
+| NAS: `pull access denied` / `unauthorized` for ghcr.io | Do Step 17 (make the package public), or check the GitHub Actions run finished. |
 | NAS: briefings arrive at the wrong hour | Set `TZ` in `docker-compose.yml` and `BOT_TIMEZONE` in `.env` to your time zone. |
 | LINE **Verify** fails | Both the bot and cloudflared must be running, and the URL must end in `/line`. |
 

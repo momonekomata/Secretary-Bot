@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Effort } from './config';
+import type { Repeat } from './time';
 
 /** One remembered turn. Only plain text is kept between turns (see agent.ts for why). */
 export interface Turn {
@@ -20,6 +21,8 @@ export interface Reminder {
   text: string;
   /** ISO 8601 instant. */
   dueAt: string;
+  /** Repeating reminders are rescheduled after they fire. */
+  repeat?: Repeat;
 }
 
 export interface Todo {
@@ -42,6 +45,8 @@ export interface Settings {
   translateTo?: string;
   newsTopics?: string[];
   city?: City;
+  /** Speak replies: never, only when answering a voice note, or always. */
+  voiceReplies?: 'off' | 'voice-notes' | 'always';
 }
 
 export interface UsageRow {
@@ -181,11 +186,17 @@ export class Store {
     return chatKey ? this.data.reminders.filter((r) => r.chatKey === chatKey) : this.data.reminders;
   }
 
-  addReminder(chatKey: string, text: string, dueAt: Date): Reminder {
-    const r = { id: this.data.nextId++, chatKey, text, dueAt: dueAt.toISOString() };
+  addReminder(chatKey: string, text: string, dueAt: Date, repeat: Repeat = 'none'): Reminder {
+    const r: Reminder = { id: this.data.nextId++, chatKey, text, dueAt: dueAt.toISOString(), ...(repeat !== 'none' ? { repeat } : {}) };
     this.data.reminders.push(r);
     this.save();
     return r;
+  }
+
+  /** Puts a fired repeating reminder back with its next time (same id, so it can still be cancelled). */
+  rescheduleReminder(r: Reminder, next: Date) {
+    this.data.reminders.push({ ...r, dueAt: next.toISOString() });
+    this.save();
   }
 
   removeReminder(chatKey: string, id: number): boolean {

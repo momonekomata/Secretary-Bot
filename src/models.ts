@@ -24,6 +24,12 @@ export const MODELS: ModelInfo[] = [
   { id: 'claude-haiku-5-5', label: '🪶 Claude Haiku 5.5', provider: 'claude', input: 0.1, output: 0.5, cacheRead: 0.01, note: 'cheapest Claude' },
 ];
 
+/** Models used behind the scenes (not chat choices), for cost estimates. TTS output is audio tokens. */
+const EXTRA_PRICES: Record<string, Pick<ModelInfo, 'provider' | 'input' | 'output'>> = {
+  'gemini-3.8-flash-tts': { provider: 'gemini', input: 0.5, output: 10 },
+  'gemini-3.8-flash-lite-tts': { provider: 'gemini', input: 0.25, output: 5 },
+};
+
 /** Gemini 4 Argon's introductory price ends on 1 December 2026. */
 const ARGON_FULL_PRICE_FROM = Date.parse('2026-12-01T00:00:00Z');
 
@@ -32,10 +38,8 @@ export function modelInfo(id: string, overridesJson = '', at = new Date()): Mode
   let info: ModelInfo = known ?? {
     id,
     label: id,
-    provider: id.startsWith('claude') ? 'claude' : 'gemini',
-    input: 0,
-    output: 0,
     note: 'custom model',
+    ...(EXTRA_PRICES[id] ?? { provider: id.startsWith('claude') ? 'claude' : 'gemini', input: 0, output: 0 }),
   };
   if (id === 'gemini-4-argon' && at.getTime() >= ARGON_FULL_PRICE_FROM) info = { ...info, input: 4, output: 20 };
   if (overridesJson) {

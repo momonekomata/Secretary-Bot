@@ -147,3 +147,22 @@ export function formatWeather(city: City, f: Forecast, aq: AirQuality | null, da
   }
   return lines.join('\n');
 }
+
+/** Names a coordinate with OpenStreetMap's Nominatim (free, low volume); falls back to the coordinates. */
+export async function reverseGeocode(lat: number, lon: number): Promise<City> {
+  const fallback = { name: `${lat.toFixed(3)}, ${lon.toFixed(3)}`, lat, lon };
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2&zoom=12&accept-language=en`, {
+      headers: { 'User-Agent': 'SecretaryBot/1.0 (personal assistant; https://github.com/momonekomata/Secretary-Bot)' },
+    });
+    if (!res.ok) return fallback;
+    const r = (await res.json()) as { address?: Record<string, string> };
+    const a = r.address ?? {};
+    const place = a.suburb ?? a.city_district ?? a.town ?? a.city ?? a.village ?? a.county;
+    const city = a.city ?? a.town ?? a.state;
+    const name = [place, city !== place ? city : undefined].filter(Boolean).join(', ');
+    return name ? { name, country: a.country, lat, lon } : fallback;
+  } catch {
+    return fallback;
+  }
+}

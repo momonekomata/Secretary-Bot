@@ -3,6 +3,8 @@ import { friendlyError, type Channel, type IncomingMessage, type Secretary } fro
 import { chunkText } from './chunk';
 import type { Button, CommandReply } from './commands';
 import type { Config } from './config';
+import { hasFfmpeg, toOggOpus } from './audio';
+import { MAX_FILE_BYTES, UserFacingError } from './documents';
 import type { AudioInput } from './voice';
 
 interface TgUser {
@@ -13,6 +15,7 @@ interface TgFile {
   file_id: string;
   file_size?: number;
   mime_type?: string;
+  file_name?: string;
 }
 interface TgMessage {
   message_id: number;
@@ -23,6 +26,8 @@ interface TgMessage {
   photo?: TgFile[];
   voice?: TgFile;
   audio?: TgFile;
+  document?: TgFile;
+  location?: { latitude: number; longitude: number };
 }
 interface TgCallback {
   id: string;
@@ -89,9 +94,31 @@ export class Telegram implements Channel {
     if (!json.ok) throw new Error(`Telegram sendDocument: ${json.description ?? res.status}`);
   }
 
+  /** Sends an Ogg/Opus voice bubble. */
+  async sendVoice(chatId: string, ogg: Buffer, durationMs: number) {
+    const form = new FormData();
+    form.append('chat_id', chatId);
+    form.append('duration', String(Math.max(1, Math.round(durationMs / 1000))));
+    form.append('voice', new Blob([ogg], { type: 'audio/ogg' }), 'reply.ogg');
+    const res = await fetch(`${this.api}/sendVoice`, { method: 'POST', body: form });
+    const json = (await res.json()) as { ok: boolean; description?: string };
+    if (!json.ok) throw new Error(`Telegram sendVoice: ${json.description ?? res.status}`);
+  }
+
   private async sendReply(chatId: string, reply: CommandReply) {
     if (reply.file) await this.sendFile(chatId, reply.file.name, reply.file.data, reply.text);
-    else await this.send(chatId, reply.text, reply.buttons);
+    else if (reply.text) await this.send(chatId, reply.text, reply.buttons);
+    if (!reply.speak) return;
+    try {
+      if (!hasFfmpeg()) throw new Error('ffmpeg is not installed');
+      await this.call('sendChatAction', { chat_id: chatId, action: 'record_voice' }).catch(() => undefined);
+      const speech = await this.secretary.speech(reply.speak);
+      if (!speech) throw new Error('no audio returned');
+      await this.sendVoice(chatId, await toOggOpus(speech), speech.durationMs);
+    } catch (e) {
+      this.log('Spoken reply failed:', (e as Error).message);
+      if (!reply.text) await this.send(chatId, reply.speak);
+    }
   }
 
   /** Long polling: no public URL needed. Runs until stop(). */
@@ -169,7 +196,8 @@ export class Telegram implements Channel {
       text: (msg.text ?? msg.caption ?? '').trim(),
     };
     const voice = msg.voice ?? msg.audio;
-    if (!incoming.text && !msg.photo && !voice) return;
+    if (msg.location) incoming.location = { lat: msg.location.latitude, lon: msg.location.longitude };
+    if (!incoming.text && !msg.photo && !voice && !msg.document && !msg.location) return;
 
     let typing: NodeJS.Timeout | undefined;
     try {
@@ -177,6 +205,7 @@ export class Telegram implements Channel {
       if (this.cfg.allowedUsers.includes(incoming.userId)) {
         if (msg.photo) incoming.images = await this.downloadPhoto(msg.photo);
         if (voice) incoming.audio = await this.downloadAudio(voice);
+        if (msg.document) incoming.file = await this.downloadDocument(msg.document);
       }
       const reply = await this.secretary.handle(incoming);
       if (reply) await this.sendReply(chatId, reply);
@@ -230,8 +259,15 @@ export class Telegram implements Channel {
     return [{ mediaType: 'image/jpeg', data: (await this.download(best.file_id)).toString('base64') }];
   }
 
+  private async downloadDocument(f: TgFile): Promise<IncomingMessage['file']> {
+    const name = f.file_name ?? 'file';
+    // Bots can only download files up to 20 MB from Telegram.
+    if ((f.file_size ?? 0) > MAX_FILE_BYTES) throw new UserFacingError(`${name} is too big for me (max about 15 MB).`);
+    return { name, mime: f.mime_type ?? 'application/octet-stream', data: await this.download(f.file_id) };
+  }
+
   private async downloadAudio(f: TgFile): Promise<AudioInput | undefined> {
-    if ((f.file_size ?? 0) > MAX_AUDIO_BYTES) throw new Error('That voice note is too long for me (max about 15 MB).');
+    if ((f.file_size ?? 0) > MAX_AUDIO_BYTES) throw new UserFacingError('That voice note is too long for me (max about 15 MB).');
     // Telegram voice notes are Ogg/Opus, which Gemini reads directly.
     return { mimeType: f.mime_type ?? 'audio/ogg', data: (await this.download(f.file_id)).toString('base64') };
   }

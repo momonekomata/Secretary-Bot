@@ -24,6 +24,8 @@ const QUESTIONS = [
   ['LINE_CHANNEL_SECRET', 'LINE channel secret (Enter to skip LINE)', { secret: true }],
   ['LINE_CHANNEL_ACCESS_TOKEN', 'LINE channel access token', { secret: true, onlyIf: 'LINE_CHANNEL_SECRET' }],
   ['LINE_ALLOWED_USERS', 'Your LINE user id, starts with U (Enter if you do not know it yet)', { onlyIf: 'LINE_CHANNEL_SECRET' }],
+  ['PUBLIC_URL', 'Public https address of the bot, for LINE (Enter to skip; see SETUP-GUIDE.md Part 5)', { onlyIf: 'LINE_CHANNEL_SECRET' }],
+  ['GOOGLE_MAPS_API_KEY', 'Google Maps API key for places and travel times (Enter to skip)', { secret: true }],
   ['BOT_NOTIFY_CHATS', 'Chat for morning briefings and alerts, from /id, e.g. telegram:123456789 (Enter to skip for now)', {}],
   ['DAILY_WARNING_LIMIT_USD', 'Daily AI spend warning, in US dollars', { def: '0.50' }],
   ['DAILY_HARD_LIMIT_USD', 'Daily AI spend hard cap, in US dollars (the AI pauses until midnight)', { def: '1.50' }],

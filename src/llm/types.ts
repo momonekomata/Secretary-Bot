@@ -1,4 +1,5 @@
 import type { Effort } from '../config';
+import type { DocumentInput } from '../documents';
 import type { Usage } from '../models';
 import type { Turn } from '../store';
 
@@ -29,6 +30,8 @@ export interface TurnRequest {
   history: Turn[];
   userText: string;
   images?: ImageInput[];
+  /** PDFs for the model to read. */
+  documents?: DocumentInput[];
   /** Per-turn context (time, memories), sent after the user's message. */
   note?: string;
   tools: ToolSpec[];

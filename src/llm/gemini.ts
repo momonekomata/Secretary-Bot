@@ -55,6 +55,7 @@ export class GeminiProvider implements Provider {
 
   async run(req: TurnRequest): Promise<TurnResult> {
     const userParts: Part[] = [
+      ...(req.documents ?? []).map((d) => ({ inlineData: { mimeType: d.mediaType, data: d.data } })),
       ...(req.images ?? []).map((img) => ({ inlineData: { mimeType: img.mediaType, data: img.data } })),
       { text: req.userText || '(sent a photo)' },
       // Gemini has no mid-conversation system role: the per-turn note rides at the end of the user turn.

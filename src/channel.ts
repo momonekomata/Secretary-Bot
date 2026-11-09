@@ -4,6 +4,10 @@ import { runCommand, SLOW_COMMANDS, type Button, type CommandReply } from './com
 import type { Config } from './config';
 import type { GenerateContent } from './llm/gemini';
 import type { Store } from './store';
+import { speakable, synthesize, toGeminiAudio, type Speech } from './audio';
+import { fileToInput, UserFacingError } from './documents';
+import { formatTime } from './time';
+import { airQuality, forecast, formatWeather, reverseGeocode } from './weather';
 import { transcribe, voicePrompt, type AudioInput } from './voice';
 
 /** A chat platform the bot can push messages to (reminders, briefings, alerts). */
@@ -51,10 +55,15 @@ export interface IncomingMessage {
   text: string;
   images?: IncomingImage[];
   audio?: AudioInput;
+  /** A document the user sent (PDF, Word, text...). */
+  file?: { name: string; mime: string; data: Buffer };
+  /** A shared location. */
+  location?: { lat: number; lon: number };
 }
 
 /** A short message for the user when handling their message failed. */
 export function friendlyError(e: unknown): string {
+  if (e instanceof UserFacingError) return e.message;
   const status = (e as { status?: number }).status;
   if (status === 429) return 'The AI service is rate limiting me right now. Try again in a minute.';
   if (status === 401 || status === 403) return 'My AI API key was rejected. Check GEMINI_API_KEY / ANTHROPIC_API_KEY on the bot.';
@@ -101,20 +110,65 @@ export class Secretary {
     const command = await runCommand(m.text, ctx);
     if (command) return command;
 
-    if (m.audio) return { text: await this.voice(m) };
+    if (m.location) return { text: await this.location(m.location) };
+    const mode = this.store.settings().voiceReplies ?? this.cfg.defaultVoiceReplies;
+    if (m.audio) {
+      const v = await this.voice(m);
+      return { text: v.text, ...(v.reply && mode !== 'off' ? { speak: v.reply } : {}) };
+    }
+    if (m.file) {
+      const f = fileToInput(m.file.name, m.file.mime, m.file.data);
+      const ask = m.text || 'I sent you this file. Tell me briefly what it is and the key points, then ask what I want to do with it.';
+      return {
+        text: await this.agent.reply({
+          chatKey: m.chatKey,
+          text: ask,
+          images: f.images,
+          documents: f.documents,
+          fileText: f.text,
+          fileNames: [m.file.name],
+          userName: m.userName,
+        }),
+      };
+    }
     if (!m.text && !m.images?.length) return null;
-    return { text: await this.agent.reply({ chatKey: m.chatKey, text: m.text, images: m.images, userName: m.userName }) };
+    const reply = await this.agent.reply({ chatKey: m.chatKey, text: m.text, images: m.images, userName: m.userName });
+    return { text: reply, ...(mode === 'always' ? { speak: reply } : {}) };
   }
 
-  private async voice(m: IncomingMessage): Promise<string> {
-    if (!this.gemini) return '🎙️ Voice notes need a Gemini API key (GEMINI_API_KEY), even when chatting with Claude.';
+  /** A shared location becomes the weather / nearby-places city. */
+  private async location(loc: { lat: number; lon: number }): Promise<string> {
+    const city = await reverseGeocode(loc.lat, loc.lon);
+    this.store.updateSettings({ city });
+    let weather = '';
+    try {
+      const [f, aq] = await Promise.all([forecast(city), airQuality(city).catch(() => null)]);
+      weather = `\n\n${formatWeather(city, f, aq, 1)}`;
+    } catch {
+      // Weather is a bonus here; the location is saved either way.
+    }
+    return `📍 Got it: ${city.name}${city.country ? `, ${city.country}` : ''}. I'll use this for weather, briefings and nearby places (updated ${formatTime(new Date(), this.cfg.timezone)}).${weather}`;
+  }
+
+  /** Spoken version of `text` (Gemini text-to-speech), or null when unavailable. */
+  async speech(text: string): Promise<Speech | null> {
+    if (!this.gemini) return null;
+    const spoken = speakable(text);
+    if (!spoken) return null;
+    this.agent.checkBudget();
+    return synthesize(this.gemini, this.cfg.ttsModel, this.cfg.ttsVoice, spoken, (u) => this.agent.recordUsage(u, 'speech'));
+  }
+
+  private async voice(m: IncomingMessage): Promise<{ text: string; reply?: string }> {
+    if (!this.gemini) return { text: '🎙️ Voice notes need a Gemini API key (GEMINI_API_KEY), even when chatting with Claude.' };
     this.agent.checkBudget();
     const translateTo = this.briefings.translateTo();
-    const t = await transcribe(this.gemini, this.cfg.voiceModel, m.audio!, translateTo, (u) => this.agent.recordUsage(u, 'voice'));
-    if (!t.transcript.trim()) return "🎙️ I couldn't hear anything in that voice note.";
+    const audio = await toGeminiAudio(m.audio!);
+    const t = await transcribe(this.gemini, this.cfg.voiceModel, audio, translateTo, (u) => this.agent.recordUsage(u, 'voice'));
+    if (!t.transcript.trim()) return { text: "🎙️ I couldn't hear anything in that voice note." };
     const prompt = voicePrompt(t, translateTo) + (m.text ? `\nThe user added: ${m.text}` : '');
     const reply = await this.agent.reply({ chatKey: m.chatKey, text: prompt, userName: m.userName, kind: 'voice' });
-    return [
+    const text = [
       `🎙️ Voice note (${t.language})`,
       `📝 ${t.transcript}`,
       t.translation ? `🌐 ${translateTo}: ${t.translation}` : '',
@@ -123,5 +177,6 @@ export class Secretary {
     ]
       .filter((l, i) => l !== '' || i === 3)
       .join('\n');
+    return { text, reply };
   }
 }

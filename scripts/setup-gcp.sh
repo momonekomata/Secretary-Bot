@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prepares a Google Cloud project for the bot with the gcloud CLI:
-# creates (or reuses) a project and enables the Calendar, Gmail, Tasks and Drive APIs.
+# creates (or reuses) a project and enables the Calendar, Gmail, Tasks, Drive, Docs, Sheets and People APIs.
 # Google does not allow scripting the OAuth consent screen or downloading the client file,
 # so the script ends by printing the two pages to finish in your browser.
 #
@@ -27,12 +27,15 @@ else
 fi
 gcloud config set project "$PROJECT_ID" >/dev/null
 
-echo "Enabling Calendar, Gmail, Tasks and Drive APIs (takes a minute)..."
+echo "Enabling Calendar, Gmail, Tasks, Drive, Docs, Sheets and Contacts APIs (takes a minute)..."
 gcloud services enable \
   calendar-json.googleapis.com \
   gmail.googleapis.com \
   tasks.googleapis.com \
-  drive.googleapis.com
+  drive.googleapis.com \
+  docs.googleapis.com \
+  sheets.googleapis.com \
+  people.googleapis.com
 
 cat <<MSG
 
@@ -51,4 +54,9 @@ cat <<MSG
    - Download the JSON, rename it to credentials.json and put it in the bot's data/ folder.
 
 Then run:  npm run google-auth
+
+Optional, Google Maps (places and travel times; needs a billing account on the project):
+   gcloud services enable places.googleapis.com routes.googleapis.com
+   then create an API key at https://console.cloud.google.com/apis/credentials?project=$PROJECT_ID
+   and put it in .env as GOOGLE_MAPS_API_KEY.
 MSG
