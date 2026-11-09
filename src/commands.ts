@@ -9,6 +9,7 @@ import { bodyNumbers, formatBody, formatFoodDay } from './health';
 import { JLPT_LEVELS, type JapaneseDaily } from './japanese';
 import { localDay } from './time';
 import { weatherText } from './tools';
+import { formatDay as formatWatchDay } from './healthsync';
 import type { Store } from './store';
 import { geocode } from './weather';
 
@@ -40,7 +41,7 @@ export interface CommandContext {
 }
 
 /** Commands that call an AI or an outside API: channels show "typing…" while they run. */
-export const SLOW_COMMANDS = new Set(['/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say']);
+export const SLOW_COMMANDS = new Set(['/health', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say']);
 
 export const HELP = [
   'Hi! I am your personal secretary and news curator. Just talk to me, send a photo, or send a voice note.',
@@ -52,7 +53,7 @@ export const HELP = [
   '📍 Places: share your location, /places <what>, /setcity <city>',
   '🔊 Voice: send a voice note; /voice off|notes|always, /say <text>',
   '🇯🇵 Japanese: /kanji, /word (of the day, also sent daily at 12:00), /jlpt N4',
-  '🍽️ Health: tell me or send a photo of what you ate; /food, /bmi, /profile, /weight 65.5',
+  '🍽️ Health: tell me or send a photo of what you ate; /food, /bmi, /profile, /weight 65.5, /health (watch data)',
   '🎬 Roleplay: /roleplay (scenes, stories, Japanese conversation practice), /roleplay end',
   '🌦️ Weather: /weather, /forecast (7 days), /weekend',
   '🎭 Personality: /persona (pick one or describe your own), /name <new name>, /ttsvoice <voice>',
@@ -322,6 +323,16 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         store.logWeight(chatKey, day, Math.round(kg * 10) / 10);
         const change = before ? ` (${kg - before.kg >= 0 ? '+' : ''}${(kg - before.kg).toFixed(1)} kg since ${before.day})` : '';
         return { text: `⚖️ Logged ${kg} kg${change}.\n\n${formatBody(store.body(chatKey), Number(day.slice(0, 4)))}` };
+      }
+
+      case '/health': {
+        const hs = agent.healthSync;
+        if (!hs) return needGoogle();
+        if (!(await hs.available())) return { text: 'I can\'t find any "Health Sync …" folders in your Google Drive. In the Health Sync app, check that syncing to Google Drive is on.' };
+        const days = Math.min(14, Math.max(1, Number(arg) || 2));
+        const list = Array.from({ length: days }, (_, i) => localDay(new Date(now.getTime() - (days - 1 - i) * 864e5), cfg.timezone));
+        const summaries = await Promise.all(list.map((d) => hs.day(d)));
+        return { text: `⌚ Watch data (via Health Sync)\n${summaries.map((s) => `• ${formatWatchDay(s)}`).join('\n')}\n\nToday fills in as Health Sync uploads. Ask me about trends, e.g. "how active was I this week?"` };
       }
 
       // --- weather ---

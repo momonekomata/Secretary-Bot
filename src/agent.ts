@@ -2,6 +2,7 @@ import type { Config, Effort } from './config';
 import type { DocumentInput } from './documents';
 import type { Google } from './google';
 import type { ImageInput, Provider, ToolSpec } from './llm/types';
+import { HealthSync } from './healthsync';
 import type { Maps } from './maps';
 import { costOf, modelInfo, type ProviderName, type Usage } from './models';
 import type { Store } from './store';
@@ -49,7 +50,8 @@ export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: b
       : '',
     'You also keep the user\'s food diary: when they tell you what they ate or send a photo of food or a drink, estimate average calories and ' +
       'macros and log it with food_log_add (no need to ask first; they can remove an entry), then reply with what you logged and how the day stands. ' +
-      'You can work out BMI, BMR and calorie targets from their body profile. Health numbers are estimates, not medical advice.',
+      'You can work out BMI, BMR and calorie targets from their body profile, and read their Samsung watch data (steps, heart rate, SpO2, ' +
+      'workouts, smart-scale readings) with watch_health_data when connected. Health numbers are estimates, not medical advice; be encouraging, never judgemental, and suggest a doctor for anything worrying.',
     'You are also a friendly companion to chat with about anything, and you can run roleplay scenes and stories when asked ' +
       '(including Japanese conversation practice, where you play a character in a real-life scene and gently correct mistakes after each reply). ' +
       'During a roleplay, stay in the scene until the user ends it, but still help at once with real tasks or anything urgent. ' +
@@ -64,6 +66,8 @@ export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: b
 export class Agent {
   private systemCache: { key: string; text: string } | null = null;
   private readonly tools: ToolSpec[];
+  /** Samsung Health data from Health Sync's Drive folders (when Google Drive is connected). */
+  readonly healthSync: HealthSync | null;
   private readonly locks = new Map<string, Promise<unknown>>();
 
   constructor(
@@ -74,6 +78,7 @@ export class Agent {
     private readonly now: () => Date = () => new Date(),
     readonly maps: Maps | null = null,
   ) {
+    this.healthSync = google?.has('drive') ? new HealthSync(google) : null;
     this.tools = toolSpecs({ wanikani: !!cfg.wanikaniToken, google, maps: !!maps });
   }
 
@@ -237,7 +242,16 @@ export class Agent {
       tools: this.tools,
       webTools: this.cfg.webTools,
       runTool: (name, args) =>
-        runTool(name, args, { chatKey, store: this.store, cfg: this.cfg, google: this.google, maps: this.maps, readPdf: (n, pdf) => this.readPdf(n, pdf), now: this.now }),
+        runTool(name, args, {
+          chatKey,
+          store: this.store,
+          cfg: this.cfg,
+          google: this.google,
+          maps: this.maps,
+          healthSync: this.healthSync,
+          readPdf: (n, pdf) => this.readPdf(n, pdf),
+          now: this.now,
+        }),
       onUsage: (u) => this.recordUsage(u, kind),
     });
 

@@ -2,6 +2,7 @@ import { BudgetExceeded } from './agent';
 import { archiveUsage, type Briefings } from './briefings';
 import type { Channels } from './channel';
 import type { Config } from './config';
+import type { HealthSync } from './healthsync';
 import type { JapaneseDaily } from './japanese';
 import type { Store } from './store';
 import { localClock, nextOccurrence, parseHHMM } from './time';
@@ -52,6 +53,7 @@ export class Scheduler {
     private readonly briefings: Briefings | null,
     private readonly log: (...a: unknown[]) => void = console.log,
     private readonly japanese: JapaneseDaily | null = null,
+    private readonly healthSync: HealthSync | null = null,
   ) {
     this.jobs = this.buildJobs();
   }
@@ -134,11 +136,30 @@ export class Scheduler {
         .catch((e) => this.log(`Job ${job.key} failed:`, (e as Error).message))
         .finally(() => this.running.delete(job.key));
     }
+    if (!this.running.has('weight')) {
+      this.running.add('weight');
+      await this.syncWeight(now)
+        .catch((e) => this.log('Weight sync failed:', (e as Error).message))
+        .finally(() => this.running.delete('weight'));
+    }
     if (this.cfg.notifyChats.length && !this.running.has('aqi')) {
       this.running.add('aqi');
       await this.aqiAlert(now)
         .catch((e) => this.log('AQI check failed:', (e as Error).message))
         .finally(() => this.running.delete('aqi'));
+    }
+  }
+
+  private lastWeightSync = 0;
+
+  /** Hourly: copies new smart-scale weigh-ins from Health Sync into the weight history (for BMI and targets). */
+  async syncWeight(now: Date) {
+    if (!this.healthSync || !this.cfg.notifyChats.length || now.getTime() - this.lastWeightSync < 3_600_000) return;
+    this.lastWeightSync = now.getTime();
+    const w = await this.healthSync.latestWeighIn();
+    if (!w) return;
+    for (const chat of this.cfg.notifyChats) {
+      if (!this.store.weights(chat).some((x) => x.day === w.day && x.kg === w.kg)) this.store.logWeight(chat, w.day, w.kg);
     }
   }
 

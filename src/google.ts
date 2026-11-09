@@ -470,6 +470,20 @@ export class Google {
     return { name, mimeType, text: `(${name} is a ${mimeType} file, which I can't read. PDFs, Word, Google Docs/Sheets/Slides and text files work.)` };
   }
 
+  /** Lists Drive files matching a Drive query (ids, names, times). */
+  async listFiles(q: string, orderBy = 'modifiedTime desc', max = 50): Promise<{ id: string; name: string; modifiedTime: string }[]> {
+    const r = await this.api<{ files?: { id: string; name: string; modifiedTime: string }[] }>(
+      `https://www.googleapis.com/drive/v3/files?${new URLSearchParams({ q, orderBy, pageSize: String(max), fields: 'files(id,name,modifiedTime)' })}`,
+    );
+    return r.files ?? [];
+  }
+
+  /** Downloads a (small) Drive file as text. */
+  async downloadText(fileId: string): Promise<string> {
+    const res = await this.request(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`);
+    return res.text();
+  }
+
   // --- Docs ---
 
   /** Creates a Google Doc with `text` and returns its link. */

@@ -116,6 +116,9 @@ In Telegram, search for your bot's username, open it, and press **Start**. It re
 - `/kanji` and `/word` show the kanji and word of the day (also sent every day at 12:00 once Part 2 is done); `/jlpt N4` sets the level.
 - Tell it what you ate (*"lunch was khao man gai and a Thai iced tea"*) or send a photo of your food: it logs the calories. `/food` shows today.
   Tell it your age, height, weight and how much you exercise, then `/bmi` gives your BMI, BMR and daily calorie target. `/weight 65.5` logs your weight.
+- **Samsung watch:** if the Health Sync app uploads your Samsung Health data to Google Drive (folders named "Health Sync …"), the bot reads it
+  once Google is connected (Part 3): `/health` shows steps, heart rate, SpO2, workouts and scale readings, your morning briefing gets a
+  one-line summary, and new weigh-ins go into your weight history. Turn on **Sleep** in Health Sync's Google Drive sync to add sleep later.
 - `/roleplay` starts a scene: a story, a mystery, or Japanese conversation practice like ordering ramen in Tokyo. `/roleplay end` stops.
 - `/forecast` gives 7 days of weather.
 - `/persona` gives it a personality: tap a ready-made one, or describe your own, e.g.

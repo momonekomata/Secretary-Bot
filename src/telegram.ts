@@ -158,6 +158,7 @@ export class Telegram implements Channel {
       ['word', 'Japanese word of the day'],
       ['food', "Today's food and calories"],
       ['bmi', 'BMI, BMR and calorie target'],
+      ['health', 'Watch data: steps, heart rate, workouts'],
       ['roleplay', 'Start a roleplay or Japanese practice scene'],
       ['todo', 'Show to-do list'],
       ['add', 'Add a to-do'],
