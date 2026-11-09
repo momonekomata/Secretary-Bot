@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Effort } from './config';
 
 /** One remembered turn. Only plain text is kept between turns (see agent.ts for why). */
 export interface Turn {
@@ -21,17 +22,55 @@ export interface Reminder {
   dueAt: string;
 }
 
+export interface Todo {
+  id: number;
+  title: string;
+  createdAt: string;
+}
+
+export interface City {
+  name: string;
+  country?: string;
+  lat: number;
+  lon: number;
+}
+
+/** Bot-wide settings changed from chat with /settings, /model, /setcity, /addtopic... */
+export interface Settings {
+  model?: string;
+  effort?: Effort;
+  translateTo?: string;
+  newsTopics?: string[];
+  city?: City;
+}
+
+export interface UsageRow {
+  ts: string;
+  /** What the call was for: chat, briefing, voice, ... */
+  kind: string;
+  model: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  webSearches: number;
+  cost: number;
+}
+
 interface Data {
   nextId: number;
   history: Record<string, Turn[]>;
-  /** Memories are per person, keyed by chat. */
+  /** Memories, todos: per person, keyed by chat. */
   memories: Record<string, Memory[]>;
+  todos: Record<string, Todo[]>;
   reminders: Reminder[];
-  /** Last day (YYYY-MM-DD) the daily nudge went out, per chat. */
-  nudgedOn: Record<string, string>;
+  settings: Settings;
+  usage: UsageRow[];
+  /** Last local day (YYYY-MM-DD) each scheduled job or one-a-day alert ran. */
+  ranOn: Record<string, string>;
 }
 
-const empty = (): Data => ({ nextId: 1, history: {}, memories: {}, reminders: [], nudgedOn: {} });
+const empty = (): Data => ({ nextId: 1, history: {}, memories: {}, todos: {}, reminders: [], settings: {}, usage: [], ranOn: {} });
 
 /**
  * Tiny JSON-file store. Fine for a personal bot with a handful of chats;
@@ -47,7 +86,11 @@ export class Store {
     if (dir && this.file) {
       mkdirSync(dir, { recursive: true });
       try {
-        this.data = { ...empty(), ...JSON.parse(readFileSync(this.file, 'utf8')) };
+        const raw = JSON.parse(readFileSync(this.file, 'utf8'));
+        // Older files kept the daily nudge in `nudgedOn`.
+        if (raw.nudgedOn && !raw.ranOn) raw.ranOn = Object.fromEntries(Object.entries(raw.nudgedOn).map(([k, v]) => [`nudge:${k}`, v]));
+        delete raw.nudgedOn;
+        this.data = { ...empty(), ...raw };
       } catch {
         // First run, or unreadable file: start fresh.
       }
@@ -60,6 +103,8 @@ export class Store {
     writeFileSync(tmp, JSON.stringify(this.data, null, 1));
     renameSync(tmp, this.file);
   }
+
+  // --- conversation ---
 
   history(chatKey: string): Turn[] {
     return this.data.history[chatKey] ?? [];
@@ -79,6 +124,8 @@ export class Store {
     this.save();
   }
 
+  // --- memories ---
+
   memories(chatKey: string): Memory[] {
     return this.data.memories[chatKey] ?? [];
   }
@@ -97,6 +144,38 @@ export class Store {
     this.save();
     return after.length !== before.length;
   }
+
+  // --- todos ---
+
+  todos(chatKey: string): Todo[] {
+    return this.data.todos[chatKey] ?? [];
+  }
+
+  addTodo(chatKey: string, title: string): Todo {
+    const t = { id: this.data.nextId++, title, createdAt: new Date().toISOString() };
+    this.data.todos[chatKey] = [...this.todos(chatKey), t];
+    this.save();
+    return t;
+  }
+
+  /** Removes a todo by id. */
+  completeTodo(chatKey: string, id: number): Todo | null {
+    const t = this.todos(chatKey).find((x) => x.id === id) ?? null;
+    if (t) {
+      this.data.todos[chatKey] = this.todos(chatKey).filter((x) => x.id !== id);
+      this.save();
+    }
+    return t;
+  }
+
+  clearTodos(chatKey: string): number {
+    const n = this.todos(chatKey).length;
+    delete this.data.todos[chatKey];
+    this.save();
+    return n;
+  }
+
+  // --- reminders ---
 
   reminders(chatKey?: string): Reminder[] {
     return chatKey ? this.data.reminders.filter((r) => r.chatKey === chatKey) : this.data.reminders;
@@ -126,12 +205,46 @@ export class Store {
     return due;
   }
 
-  nudgedOn(chatKey: string): string | undefined {
-    return this.data.nudgedOn[chatKey];
+  // --- settings ---
+
+  settings(): Settings {
+    return this.data.settings;
   }
 
-  markNudged(chatKey: string, day: string) {
-    this.data.nudgedOn[chatKey] = day;
+  updateSettings(patch: Partial<Settings>) {
+    this.data.settings = { ...this.data.settings, ...patch };
+    this.save();
+  }
+
+  // --- usage log ---
+
+  addUsage(row: UsageRow) {
+    this.data.usage.push(row);
+    this.save();
+  }
+
+  usage(): UsageRow[] {
+    return this.data.usage;
+  }
+
+  /** Removes and returns usage rows older than `cutoff`. */
+  takeUsageBefore(cutoff: Date): UsageRow[] {
+    const old = this.data.usage.filter((u) => Date.parse(u.ts) < cutoff.getTime());
+    if (old.length) {
+      this.data.usage = this.data.usage.filter((u) => Date.parse(u.ts) >= cutoff.getTime());
+      this.save();
+    }
+    return old;
+  }
+
+  // --- once-a-day bookkeeping ---
+
+  ranOn(key: string): string | undefined {
+    return this.data.ranOn[key];
+  }
+
+  markRan(key: string, day: string) {
+    this.data.ranOn[key] = day;
     this.save();
   }
 }

@@ -1,0 +1,37 @@
+# Runs the bot 24/7 on a NAS (Synology Container Manager, QNAP, Unraid, Portainer...) and keeps it
+# updated: Watchtower pulls each new image that GitHub Actions publishes and restarts the bot.
+#
+#   1. Put this file in a folder on the NAS, e.g. /volume1/docker/secretary-bot
+#   2. Create data/ next to it with your .env (from `npm run setup`), credentials.json and token.json
+#   3. docker compose up -d
+services:
+  secretary-bot:
+    image: ghcr.io/momonekomata/secretary-bot:latest
+    # Or build on the NAS from the source instead of pulling: comment out `image` and uncomment:
+    # build: .
+    container_name: secretary-bot
+    restart: always
+    volumes:
+      - ./data:/data
+    environment:
+      # Docker runs in UTC unless told otherwise; keep schedules on your local time.
+      - TZ=Asia/Bangkok
+    # Only needed for LINE (webhook) or Telegram webhook mode; polling Telegram needs no open port.
+    ports:
+      - "8787:8787"
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # If the image is private, log in once with `docker login ghcr.io` and uncomment:
+      # - ~/.docker/config.json:/config.json:ro
+    environment:
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_CLEANUP=true
+      - TZ=Asia/Bangkok
