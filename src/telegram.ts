@@ -159,6 +159,7 @@ export class Telegram implements Channel {
       ['inbox', 'Unread Gmail'],
       ['gtask', 'Google Tasks (list, or add with text)'],
       ['topics', 'News watchlist'],
+      ['persona', 'Choose my personality'],
       ['settings', 'AI model, effort, voice translation'],
       ['stats', 'AI usage and cost'],
       ['status', 'Check connections'],

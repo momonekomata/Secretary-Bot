@@ -22,6 +22,7 @@ from a `/settings` menu. One bot process serves both apps, and it is built to ru
 | 📷 **Photos** | Send a picture of a sign, menu or textbook page and it reads and explains it. |
 | 💵 **Cost control** | Every call's tokens and estimated cost are logged. `/stats` shows today, this month and per model. A daily warning limit and a hard cap pause the AI until midnight. Nightly cleanup archives logs older than 30 days to a `.csv.gz` (sent to you on Telegram); `/cleanup` runs it now. |
 | 🩺 **Diagnostics** | `/status` checks the AI keys, the selected Gemini model, the Google sign-in, schedules and spend. After an automatic update the bot messages you the new version. |
+| 🎭 **Personality** | `/persona` picks a character (secretary, butler, cheerful friend, caring พี่, sensei, coach) or takes your own description in plain words; each comes with a matching voice and speaking style for spoken replies. `/name` renames the bot, `/ttsvoice` picks any Gemini voice. |
 | 🇯🇵 **Japanese study** | Readings for Japanese words, live WaniKani progress, optional daily study nudge. |
 
 It is **private by default**: it only answers the user ids in its allowlist. Anyone else gets no reply.

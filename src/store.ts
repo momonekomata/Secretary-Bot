@@ -45,6 +45,15 @@ export interface Settings {
   translateTo?: string;
   newsTopics?: string[];
   city?: City;
+  /** Name the bot calls itself (overrides BOT_NAME). */
+  botName?: string;
+  /** Ready-made personality key from personas.ts, or "custom". */
+  personaKey?: string;
+  /** Personality description (a preset's text, or the user's own). */
+  persona?: string;
+  /** Gemini prebuilt voice for spoken replies, and how to speak. */
+  ttsVoice?: string;
+  speakingStyle?: string;
   /** Speak replies: never, only when answering a voice note, or always. */
   voiceReplies?: 'off' | 'voice-notes' | 'always';
 }

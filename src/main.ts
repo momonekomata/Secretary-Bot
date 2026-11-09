@@ -39,7 +39,7 @@ const briefings = new Briefings(config, store, agent);
 
 /** /status: what is configured and whether it works. */
 async function status(): Promise<string> {
-  const lines = [`🩺 ${config.botName} status (version ${config.version})`];
+  const lines = [`🩺 ${agent.botName} status (version ${config.version})`];
   const model = modelInfo(agent.model);
   lines.push(`AI model: ${model.label} (${model.id})${agent.hasProvider(model.provider) ? '' : ' ⚠️ its API key is missing'}`);
   lines.push(`Gemini key: ${config.geminiKey ? '✅' : '❌ not set (needed for Gemini models and voice notes)'}`);
@@ -66,6 +66,8 @@ async function status(): Promise<string> {
     }
   } else lines.push('Google: — not connected (run `npm run google-auth`)');
   lines.push(`Telegram: ${config.telegram.token ? `✅ ${config.telegram.mode}` : '— off'}  LINE: ${config.line.accessToken ? '✅' : '— off'}`);
+  const s = store.settings();
+  lines.push(`Personality: ${s.personaKey ?? 'default'}${s.ttsVoice ? `, voice ${s.ttsVoice}` : ''}`);
   lines.push(`Google Maps: ${maps ? '✅' : '— off (GOOGLE_MAPS_API_KEY)'}  WaniKani: ${config.wanikaniToken ? '✅' : '— off'}`);
   const voiceMode = store.settings().voiceReplies ?? config.defaultVoiceReplies;
   lines.push(
@@ -174,7 +176,7 @@ if (config.announceStartup && config.version !== 'dev') {
   if (lastVersion !== config.version) {
     store.markRan('startup-version', config.version);
     for (const chat of config.notifyChats) {
-      void channels.send(chat, `✅ ${config.botName} updated and running (version ${config.version}).`).catch(() => undefined);
+      void channels.send(chat, `✅ ${agent.botName} updated and running (version ${config.version}).`).catch(() => undefined);
     }
   }
 }

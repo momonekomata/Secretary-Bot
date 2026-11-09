@@ -156,7 +156,9 @@ export class Secretary {
     const spoken = speakable(text);
     if (!spoken) return null;
     this.agent.checkBudget();
-    return synthesize(this.gemini, this.cfg.ttsModel, this.cfg.ttsVoice, spoken, (u) => this.agent.recordUsage(u, 'speech'));
+    const s = this.store.settings();
+    const prompt = s.speakingStyle ? `Say ${s.speakingStyle}: ${spoken}` : spoken;
+    return synthesize(this.gemini, this.cfg.ttsModel, s.ttsVoice ?? this.cfg.ttsVoice, prompt, (u) => this.agent.recordUsage(u, 'speech'));
   }
 
   private async voice(m: IncomingMessage): Promise<{ text: string; reply?: string }> {

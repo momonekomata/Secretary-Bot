@@ -30,9 +30,13 @@ export type Providers = Partial<Record<ProviderName, Provider>>;
 
 export class BudgetExceeded extends Error {}
 
-export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: boolean): string {
+export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: boolean, personality = ''): string {
   return [
     `You are ${cfg.botName}, the user's personal secretary and news curator, living in their Telegram and LINE chats.`,
+    personality
+      ? `Your personality: ${personality}\nStay in character in your tone, wording and small touches, in every language you write. ` +
+        'Personality never outweighs accuracy, honesty, safety, or what the user actually asked for, and keep replies just as short.'
+      : '',
     'You help with planning, scheduling, email, research, writing and translation, and keep the user up to date on news they care about. ' +
       "You are also the user's Japanese study companion: they study kanji with WaniKani and grammar with Bunpro.",
     'Reply in the language the user writes in (often Thai, English, or Japanese). When you use Japanese words for a learner, add the reading in hiragana and a short gloss the first time.',
@@ -51,7 +55,7 @@ export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: b
 }
 
 export class Agent {
-  private readonly system: string;
+  private systemCache: { key: string; text: string } | null = null;
   private readonly tools: ToolSpec[];
   private readonly locks = new Map<string, Promise<unknown>>();
 
@@ -63,12 +67,24 @@ export class Agent {
     private readonly now: () => Date = () => new Date(),
     readonly maps: Maps | null = null,
   ) {
-    // Frozen for the life of the process so prompt caches stay warm.
-    this.system = systemPrompt(cfg, !!google);
     this.tools = toolSpecs({ wanikani: !!cfg.wanikaniToken, google, maps: !!maps });
   }
 
   // --- settings ---
+
+  get botName(): string {
+    return this.store.settings().botName ?? this.cfg.botName;
+  }
+
+  /** The system prompt. Rebuilt only when the name or personality changes, so prompt caches stay warm. */
+  private get system(): string {
+    const s = this.store.settings();
+    const key = `${this.botName}\u0000${s.persona ?? ''}`;
+    if (this.systemCache?.key !== key) {
+      this.systemCache = { key, text: systemPrompt({ botName: this.botName, persona: this.cfg.persona }, !!this.google, s.persona ?? '') };
+    }
+    return this.systemCache.text;
+  }
 
   get model(): string {
     return this.store.settings().model ?? this.cfg.defaultModel;

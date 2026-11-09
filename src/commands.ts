@@ -4,6 +4,7 @@ import { EFFORTS, type Config, type Effort } from './config';
 import { formatEmails, formatEvents, formatTasks } from './google';
 import { formatPlaces } from './maps';
 import { MODELS, modelInfo } from './models';
+import { findPersona, PERSONAS } from './personas';
 import type { Store } from './store';
 import { geocode } from './weather';
 
@@ -45,6 +46,7 @@ export const HELP = [
   '📧 Google: /calendar [days], /inbox, /mail <search>, /gtask [title], /gdone <number>, /drive [search]',
   '📍 Places: share your location, /places <what>, /setcity <city>',
   '🔊 Voice: send a voice note; /voice off|notes|always, /say <text>',
+  '🎭 Personality: /persona (pick one or describe your own), /name <new name>, /ttsvoice <voice>',
   '⚙️ Settings: /settings (AI model, thinking effort, voice translation), /stats, /status, /cleanup',
   '💬 Chat: /reset (forget this conversation, keep memories), /id',
   '',
@@ -72,6 +74,8 @@ export function settingsView(ctx: CommandContext, notice = ''): CommandReply {
   const text = [
     notice,
     '⚙️ Settings',
+    `Name: ${agent.botName}`,
+    `Personality: ${personaName(s.personaKey)}`,
     `AI model: ${current.label} (${current.id})`,
     `Thinking effort: ${agent.effort}`,
     `Voice notes: transcribe and translate to ${translateTo}`,
@@ -91,6 +95,33 @@ export function settingsView(ctx: CommandContext, notice = ''): CommandReply {
       EFFORTS.map((e) => ({ label: mark(e === agent.effort, `🧠 ${e}`), command: `/effort ${e}` })),
       LANGUAGES.map(([label, lang]) => ({ label: mark(lang === translateTo, `🎙️→${label}`), command: `/translate ${lang}` })),
       VOICE_MODES.map(([label, mode]) => ({ label: mark(mode === voiceMode, label), command: `/voice ${mode}` })),
+    ],
+  };
+}
+
+function personaName(key?: string): string {
+  if (!key) return 'default secretary';
+  return key === 'custom' ? 'your own description' : (findPersona(key)?.label ?? key);
+}
+
+export function personaView(ctx: CommandContext, notice = ''): CommandReply {
+  const s = ctx.store.settings();
+  return {
+    text: [
+      notice,
+      `🎭 ${ctx.agent.botName}'s personality: ${personaName(s.personaKey)}`,
+      s.persona ? `“${s.persona}”` : '',
+      `Voice for spoken replies: ${s.ttsVoice ?? ctx.cfg.ttsVoice}`,
+      '',
+      'Tap one below, or describe your own, e.g.',
+      '/persona a witty pirate captain who loves spreadsheets and calls me captain',
+      'Rename me with /name <name>. /persona off goes back to the default.',
+    ]
+      .filter((l, i) => l !== '' || i > 0)
+      .join('\n'),
+    buttons: [
+      ...PERSONAS.map((p) => [{ label: `${p.key === s.personaKey ? '✅ ' : ''}${p.label}`, command: `/persona ${p.key}` }]),
+      [{ label: `${s.personaKey ? '' : '✅ '}↩️ Default`, command: '/persona off' }],
     ],
   };
 }
@@ -145,6 +176,35 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         return settingsView(ctx, `✅ Voice notes will be translated into ${arg}.\n`);
       }
 
+      case '/persona': {
+        if (!arg) return personaView(ctx);
+        if (['off', 'default', 'reset', 'none'].includes(arg.toLowerCase())) {
+          store.updateSettings({ personaKey: undefined, persona: undefined, ttsVoice: undefined, speakingStyle: undefined });
+          return personaView(ctx, '↩️ Back to my default personality.\n');
+        }
+        const preset = findPersona(arg);
+        if (preset) {
+          store.updateSettings({ personaKey: preset.key, persona: preset.description, ttsVoice: preset.voice, speakingStyle: preset.speakingStyle });
+          return personaView(ctx, `✅ I'm now: ${preset.label}\n`);
+        }
+        if (arg.length < 10) return { text: `"${arg}" isn't one of my personalities. Tap one in /persona, or describe your own in a sentence.` };
+        store.updateSettings({ personaKey: 'custom', persona: arg.slice(0, 1000), speakingStyle: undefined });
+        return personaView(ctx, '✅ Got it, that is who I am now. Say hi!\n');
+      }
+      case '/name': {
+        if (!arg) return { text: `I'm ${agent.botName}. Rename me with /name <name>, e.g. /name Mali` };
+        store.updateSettings({ botName: arg.slice(0, 40) });
+        return {
+          text: `✅ From now on I'm ${arg.slice(0, 40)}.\n(The name at the top of the Telegram chat is set separately: send /setname to @BotFather.)`,
+        };
+      }
+      case '/ttsvoice': {
+        if (!/^[A-Za-z][\w-]{1,30}$/.test(arg)) {
+          return { text: 'Which voice? e.g. /ttsvoice Puck. Some Gemini voices: Kore, Puck, Charon, Fenrir, Leda, Aoede, Zephyr, Orus. Try one with /say hello.' };
+        }
+        store.updateSettings({ ttsVoice: arg });
+        return { text: `✅ Spoken replies will use the ${arg} voice.`, speak: `Hello! This is how I sound now.` };
+      }
       case '/voice': {
         const mode = arg === 'notes' ? 'voice-notes' : arg;
         if (!['off', 'voice-notes', 'always'].includes(mode)) return { text: 'Use /voice off, /voice notes (reply to voice notes with voice) or /voice always.' };

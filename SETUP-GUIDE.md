@@ -113,6 +113,8 @@ In Telegram, search for your bot's username, open it, and press **Start**. It re
 
 - `/help` shows everything it can do. Tap the **/** button in Telegram for the command menu.
 - `/settings` lets you switch between Gemini and Claude, and set how hard it thinks, with buttons.
+- `/persona` gives it a personality: tap a ready-made one, or describe your own, e.g.
+  `/persona a cheerful Thai older sister who reminds me to drink water and calls me น้อง`. `/name Mali` renames it.
 - `/news` gives you a news briefing; `/weather` today's weather and air quality; `/weekend` a weekend planner.
 - `/add Call the dentist` and `/todo` manage a to-do list.
 - Hold the 🎤 button and **send a voice note** (in Thai, English or Japanese): it transcribes it, translates it, summarises it,
