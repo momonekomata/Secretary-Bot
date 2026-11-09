@@ -83,7 +83,13 @@ async function status(): Promise<string> {
     `Kanji & word of the day ${config.schedule.japanese || 'off'}, weather ${config.schedule.weather || 'off'}, briefing ${config.schedule.briefing || 'off'}, weekend planner ${config.schedule.weekendDay} ${config.schedule.weekend || 'off'}, cleanup ${config.schedule.cleanup || 'off'} (${config.timezone})`,
   );
   const b = config.billing;
-  lines.push(`Spending today: $${agent.spentToday().toFixed(4)}${b.warnUsd !== null ? `, warn at $${b.warnUsd}` : ''}${b.capUsd !== null ? `, cap $${b.capUsd}` : ''}`);
+  const limits = (l: { warnUsd: number | null; capUsd: number | null }) =>
+    `${l.warnUsd !== null ? `, warn at $${l.warnUsd}` : ''}${l.capUsd !== null ? `, cap $${l.capUsd}` : ''}`;
+  lines.push(
+    `Spending today: $${agent.spentToday().toFixed(4)}${limits(b)}`,
+    `  Gemini $${agent.spentToday('gemini').toFixed(4)}${limits(b.providers.gemini)}`,
+    `  Claude $${agent.spentToday('claude').toFixed(4)}${limits(b.providers.claude)}`,
+  );
   return lines.join('\n');
 }
 

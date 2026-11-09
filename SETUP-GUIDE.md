@@ -43,8 +43,9 @@ Claude, you pay per use. The bot tracks its own spending (`/stats`) and can warn
 
 1. Go to **https://aistudio.google.com/apikey** and sign in with your Google account.
 2. Click **Create API key** and copy the key into a note.
-3. *(Optional)* To also use **Claude**: sign up at **https://platform.claude.com**, add credits under **Billing**,
-   then **API keys** → **Create key**, and copy it (it starts with `sk-ant-`). You can add this later.
+3. *(Optional)* To also use **Claude**: sign in at **https://platform.claude.com**. With a Claude **Max** (or Ultra/Team) plan,
+   go to **Billing** → **API credits** and link your plan to get its monthly API credit (Max: $100/month); otherwise add credits
+   under **Billing**. Then **API keys** → **Create key**, and copy it (it starts with `sk-ant-`). You can add this later.
 
 ### Step 4. Create your Telegram bot
 
@@ -89,7 +90,7 @@ Press **Enter** alone to accept the value shown in `[brackets]`.
 | Your Telegram user id | **press Enter**: you don't know it yet, the bot will tell you |
 | LINE channel secret | **press Enter** to skip for now |
 | Chat for morning briefings | **press Enter** for now (Part 2) |
-| Daily spend warning / hard cap | press Enter to keep $0.50 and $1.50, or type your own |
+| Gemini / Claude daily spend warning and hard cap | press Enter to keep the suggestions (Gemini $0.20 / $0.30, Claude $2.50 / $3.00), or type your own |
 | WaniKani API token | paste it if you have one (see "WaniKani" below), or press Enter |
 
 ### Step 8. Start the bot and get your user id
@@ -351,7 +352,7 @@ backup file in LINE (as links). Pick one option:
 | The bot doesn't answer in Telegram | Is the bot running? Is your user id in setup? Send `/id`, then `/status`. |
 | "My AI API key was rejected" | Run `npm run setup` and paste the key again. |
 | "The selected model … needs ANTHROPIC_API_KEY" | You picked a Claude model without a Claude key. Pick a Gemini model in `/settings`, or add the key. |
-| "Daily spending cap reached" | The bot paused itself to protect your wallet. It unlocks at midnight, or raise `DAILY_HARD_LIMIT_USD`. |
+| "Daily spending cap reached" / "Gemini's (or Claude's) daily cap reached" | The bot paused that AI to protect your wallet. It unlocks at midnight; meanwhile switch to the other AI in `/settings`, or raise `GEMINI_DAILY_HARD_LIMIT_USD` / `CLAUDE_DAILY_HARD_LIMIT_USD`. |
 | Voice notes: "need a Gemini API key" | Voice notes always use Gemini. Add `GEMINI_API_KEY` with `npm run setup`. |
 | "Google sign-in has expired" | Run `npm run google-auth` again (and make sure you did Step 12.4, Publish app). On the NAS, copy the new `token.json` into `data`. |
 | `/status` says a Gemini model isn't available | Google may have renamed it. Pick another model in `/settings`. |

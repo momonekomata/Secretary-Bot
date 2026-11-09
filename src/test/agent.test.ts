@@ -143,7 +143,7 @@ describe('Agent settings and spending', () => {
   it('warns once a day past the warning limit and blocks at the hard cap', async () => {
     const store = new Store(null);
     const { provider, requests } = echoProvider('answer'); // each call costs $0.75
-    const cfg = testConfig({ billing: { warnUsd: 1, capUsd: 1.5, retentionDays: 30, priceOverrides: '' } });
+    const cfg = testConfig({ billing: { ...testConfig().billing, warnUsd: 1, capUsd: 1.5 } });
     const agent = new Agent(cfg, store, { gemini: provider }, null, () => NOW);
 
     expect(await agent.reply({ chatKey: 'c', text: '1' })).toBe('answer');

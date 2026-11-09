@@ -21,7 +21,13 @@ export function testConfig(over: Partial<Config> = {}): Config {
     notifyChats: [],
     telegram: { ...config.telegram, allowedUsers: ['1'] },
     line: { ...config.line, allowedUsers: ['U1'] },
-    billing: { warnUsd: null, capUsd: null, retentionDays: 30, priceOverrides: '' },
+    billing: {
+      warnUsd: null,
+      capUsd: null,
+      retentionDays: 30,
+      priceOverrides: '',
+      providers: { gemini: { warnUsd: null, capUsd: null }, claude: { warnUsd: null, capUsd: null } },
+    },
     weather: { defaultCity: 'Bangkok', aqiAlert: null },
     ...over,
   };

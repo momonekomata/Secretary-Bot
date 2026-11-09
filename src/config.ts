@@ -86,9 +86,14 @@ export const config = {
   },
 
   billing: {
-    /** Daily spend (USD) that triggers a warning, and the hard cap that pauses AI until midnight. */
+    /** Daily spend (USD), all AI together: a warning, and a hard cap that pauses all AI until midnight. */
     warnUsd: num('DAILY_WARNING_LIMIT_USD'),
     capUsd: num('DAILY_HARD_LIMIT_USD'),
+    /** The same per provider; a provider's cap pauses only its models (e.g. Gemini within AI Pro credit, Claude within Max credit). */
+    providers: {
+      gemini: { warnUsd: num('GEMINI_DAILY_WARNING_LIMIT_USD'), capUsd: num('GEMINI_DAILY_HARD_LIMIT_USD') },
+      claude: { warnUsd: num('CLAUDE_DAILY_WARNING_LIMIT_USD'), capUsd: num('CLAUDE_DAILY_HARD_LIMIT_USD') },
+    },
     /** Days of usage log kept before the nightly cleanup archives them. */
     retentionDays: num('LOG_RETENTION_DAYS') ?? 30,
     /** Optional JSON price overrides, USD per 1M tokens: {"model-id":{"input":1,"output":2}} */
