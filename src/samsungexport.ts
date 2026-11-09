@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { createReadStream, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { createReadStream, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -144,11 +144,13 @@ export class SamsungImporter {
     const types: ImportReport['types'] = {};
     const skipped: string[] = [];
     const files: string[] = [];
+    this.jsons = new Map();
     const walk = (d: string) => {
       for (const name of readdirSync(d)) {
         const p = join(d, name);
         if (statSync(p).isDirectory()) walk(p);
         else if (name.endsWith('.csv')) files.push(p);
+        else if (name.endsWith('.json')) this.jsons.set(name, p);
       }
     };
     walk(dir);
@@ -203,8 +205,39 @@ export class SamsungImporter {
     };
   }
 
+  /** JSON side files of the export (by file name): some types keep their readings there, not in the CSV. */
+  private jsons = new Map<string, string>();
+
+  /**
+   * HRV readings: Samsung keeps them in a "binning_data" JSON file next to the CSV (or inline in "custom").
+   * Returns the average RMSSD (or SDNN) in ms, or null.
+   */
+  private hrvFromRow(row: R): number | null {
+    for (const cell of [row.binning_data, row.custom]) {
+      if (!cell) continue;
+      let data: unknown;
+      try {
+        if (/^\s*[[{]/.test(cell)) data = JSON.parse(cell);
+        else {
+          const path = this.jsons.get(basename(cell)) ?? this.jsons.get(`${basename(cell)}.json`);
+          if (!path) continue;
+          data = JSON.parse(readFileSync(path, 'utf8'));
+        }
+      } catch {
+        continue;
+      }
+      for (const key of ['rmssd', 'hrv', 'heart_rate_variability', 'sdnn']) {
+        const values = collectNumbers(data, key).filter((v) => v > 0 && v < 400);
+        if (values.length) return values.reduce((a, b) => a + b, 0) / values.length;
+      }
+    }
+    return null;
+  }
+
   /** Returns a row handler for a data type (returning the day it touched), or null when the type isn't used. */
   private handler(type: string, days: Days): ((row: R) => string | null) | null {
+    // ".raw" files repeat readings that the main file of the type already has.
+    if (type.endsWith('.raw')) return null;
     const n = (v: string | undefined) => (v === undefined ? NaN : Number(v));
     const dayOf = (row: R, ...cols: string[]) => {
       for (const c of cols) {
@@ -292,7 +325,15 @@ export class SamsungImporter {
       d._avg = { ...(d._avg ?? {}), [key]: { sum: (d._avg?.[key]?.sum ?? 0) + v, n: (d._avg?.[key]?.n ?? 0) + 1 } };
       return day;
     };
-    if (/(^|\.)hrv$/.test(type)) return average('hrv', ['rmssd', 'hrv', 'sdnn', 'heart_rate_variability', 'value'], (v) => v > 0 && v < 400);
+    if (/(^|\.)hrv$/.test(type)) {
+      const direct = average('hrv', ['rmssd', 'hrv', 'sdnn', 'heart_rate_variability', 'value'], (v) => v > 0 && v < 400);
+      return (row) => {
+        const day = direct(row);
+        if (day) return day;
+        const v = this.hrvFromRow(row);
+        return v === null ? null : direct({ ...row, rmssd: String(v) });
+      };
+    }
     if (/respiratory_rate$/.test(type)) return average('respiratory', ['respiratory_rate', 'average', 'rate', 'value'], (v) => v > 3 && v < 60);
     if (/(^|\.)stress$/.test(type)) return average('stress', ['score', 'stress', 'value'], (v) => v >= 0 && v <= 100);
     if (/floors_climbed$/.test(type)) {
@@ -445,7 +486,7 @@ export function extract(archive: string, outDir: string, opts: ExtractOptions = 
       let idle = setTimeout(() => stop(`Unpacking stalled (no file for ${Math.round(idleMs / 60_000)} minutes) and was stopped.`), idleMs);
       // Both tools print one line per unpacked file (unar on stdout, bsdtar -v on stderr).
       const onOutput = (d: Buffer) => {
-        const files = String(d).split('\n').filter((l) => /\.csv\b/i.test(l)).length;
+        const files = String(d).split('\n').filter((l) => /\.(csv|json)\b/i.test(l)).length;
         if (!files) return;
         count += files;
         clearTimeout(idle);
@@ -473,13 +514,28 @@ export function extract(archive: string, outDir: string, opts: ExtractOptions = 
       });
     });
   // -nr: don't unpack archives inside the archive; '*.csv' matches CSVs in any folder.
-  return run('unar', ['-f', '-nr', '-o', outDir, archive, '*.csv']).catch((e) => {
+  // HRV readings live in small JSON files (jsons/com.samsung.health.hrv/…), so those come too.
+  return run('unar', ['-f', '-nr', '-o', outDir, archive, '*.csv', HRV_JSON]).catch((e) => {
     if (e instanceof TimeoutError) throw e;
-    return run('bsdtar', ['-xvf', archive, '-C', outDir, '--include', '*.csv']);
+    return run('bsdtar', ['-xvf', archive, '-C', outDir, '--include', '*.csv', '--include', HRV_JSON]);
   });
 }
 
+const HRV_JSON = '*health.hrv*.json';
+
 class TimeoutError extends Error {}
+
+/** All numbers stored under `key` anywhere inside parsed JSON. */
+function collectNumbers(data: unknown, key: string, out: number[] = []): number[] {
+  if (Array.isArray(data)) for (const x of data) collectNumbers(x, key, out);
+  else if (data && typeof data === 'object') {
+    for (const [k, v] of Object.entries(data)) {
+      if (k.toLowerCase() === key && Number.isFinite(Number(v)) && v !== null && v !== '') out.push(Number(v));
+      else if (typeof v === 'object') collectNumbers(v, key, out);
+    }
+  }
+  return out;
+}
 
 export interface ImportOptions {
   log?: (...a: unknown[]) => void;

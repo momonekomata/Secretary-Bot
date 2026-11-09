@@ -54,7 +54,10 @@ export class HealthDb {
       if (!hasData(rec)) continue;
       const old = this.db.days[day] ?? {};
       const clean = Object.fromEntries(Object.entries(rec).filter(([, v]) => v != null && !(Array.isArray(v) && !v.length)));
-      this.db.days[day] = overwrite ? { ...old, ...clean } : { ...clean, ...Object.fromEntries(Object.entries(old).filter(([, v]) => v != null)) };
+      const merged: DayRecord = overwrite ? { ...old, ...clean } : { ...clean, ...Object.fromEntries(Object.entries(old).filter(([, v]) => v != null)) };
+      // Extras (HRV, stress, floors…) merge field by field, so a later import can add a reading the day was missing.
+      if (old.extra && rec.extra) merged.extra = overwrite ? { ...old.extra, ...rec.extra } : { ...rec.extra, ...old.extra };
+      this.db.days[day] = merged;
     }
     this.save();
   }

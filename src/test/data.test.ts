@@ -1,4 +1,5 @@
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -9,7 +10,7 @@ import { unzipEntry } from '../documents';
 import { buildExport, crc32, csv, zip } from '../export';
 import { formatDay } from '../healthsync';
 import { HealthDb, toSummary } from '../healthdb';
-import { SamsungImporter } from '../samsungexport';
+import { extract, SamsungImporter } from '../samsungexport';
 import { Store } from '../store';
 import { runTool } from '../tools';
 import { NOW, echoProvider, testConfig } from './helpers';
@@ -100,6 +101,46 @@ describe('Samsung export extras', () => {
     const text = formatDay(toSummary('2025-03-01', records['2025-03-01']));
     expect(text).toMatch(/HRV/);
     expect(text).toMatch(/118\/76/);
+  });
+});
+
+describe('HRV from Samsung side files', () => {
+  it('reads HRV from binning_data JSON files or inline JSON, and leaves .raw files out', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'sb-hrv-'));
+    const dir = join(root, 'samsunghealth_me_20261109212464');
+    mkdirSync(join(dir, 'jsons', 'com.samsung.health.hrv', 'a'), { recursive: true });
+    writeFileSync(
+      join(dir, 'com.samsung.health.hrv.20261109212464.csv'),
+      [
+        'com.samsung.health.hrv,6313002,4',
+        'create_sh_ver,start_time,custom,binning_data,modify_sh_ver,update_time,create_time,time_offset,deviceuuid,comment,pkg_name,end_time,datauuid',
+        '6.2,2024-12-19 15:00:00.000,,a1b2.binning_data.json,,,,UTC+0700,dev,,com.sec.android.app.shealth,2024-12-19 23:00:00.000,a1b2',
+        '6.2,2024-12-20 15:00:00.000,"{""sdnn"": 61}",,,,,UTC+0700,dev,,com.sec.android.app.shealth,2024-12-20 23:00:00.000,c3d4',
+      ].join('\n'),
+    );
+    writeFileSync(join(dir, 'jsons', 'com.samsung.health.hrv', 'a', 'a1b2.binning_data.json'), JSON.stringify([{ start_time: 1, rmssd: 40.5 }, { start_time: 2, rmssd: 49.5 }]));
+    writeFileSync(join(dir, 'com.samsung.health.oxygen_saturation.raw.20261109212464.csv'), 'com.samsung.health.oxygen_saturation.raw,1,1\nstart_time,binning_data\n2026-10-05 21:10:00.000,x.json\n');
+
+    const work = mkdtempSync(join(tmpdir(), 'sb-hrv-zip-'));
+    const zipPath = join(work, 'export.zip');
+    const canZip = spawnSync('bsdtar', ['-a', '-cf', zipPath, '-C', root, '.']).status === 0;
+    let from = root;
+    if (canZip) {
+      await extract(zipPath, join(work, 'out'));
+      from = join(work, 'out');
+    }
+    const { records, report } = await new SamsungImporter('Asia/Bangkok').importDir(from);
+    expect(records['2024-12-19'].extra?.hrv).toBe(45);
+    expect(records['2024-12-20'].extra?.hrv).toBe(61);
+    expect(report.types.hrv).toMatchObject({ rows: 2, days: 2 });
+    expect(report.types['oxygen_saturation.raw']).toBeUndefined();
+    expect(report.skipped).toContain('com.samsung.health.oxygen_saturation.raw.20261109212464.csv');
+
+    // Re-importing into a history that already has the day (with other extras) adds the HRV reading.
+    const db = new HealthDb(null);
+    db.merge({ '2024-12-19': { steps: 5000, extra: { stress: 30 } } }, true);
+    db.merge(records, false);
+    expect(db.get('2024-12-19')).toMatchObject({ steps: 5000, extra: { stress: 30, hrv: 45 } });
   });
 });
 
