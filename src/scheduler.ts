@@ -2,6 +2,8 @@ import { BudgetExceeded } from './agent';
 import { archiveUsage, type Briefings } from './briefings';
 import type { Channels } from './channel';
 import type { Config } from './config';
+import type { HealthData } from './healthdb';
+import type { JapaneseDaily } from './japanese';
 import type { Store } from './store';
 import { localClock, nextOccurrence, parseHHMM } from './time';
 import { resolveCity } from './tools';
@@ -50,6 +52,8 @@ export class Scheduler {
     private readonly channels: Channels,
     private readonly briefings: Briefings | null,
     private readonly log: (...a: unknown[]) => void = console.log,
+    private readonly japanese: JapaneseDaily | null = null,
+    private readonly health: HealthData | null = null,
   ) {
     this.jobs = this.buildJobs();
   }
@@ -89,6 +93,13 @@ export class Scheduler {
         { key: 'weekend', at: s.weekend, weekday: s.weekendDay, run: () => this.broadcast(() => b.weekendPlanner()) },
       );
     }
+    const health = this.health;
+    if (health?.sync) {
+      // Nightly: save the last few days from Health Sync into the long-term history.
+      jobs.push({ key: 'healthdb', at: s.cleanup || '03:00', run: async () => void (await health.lastDays(3, new Date(), this.cfg.timezone)) });
+    }
+    const jp = this.japanese;
+    if (jp) jobs.push({ key: 'japanese', at: s.japanese, run: () => this.broadcast(() => jp.daily()) });
     if (s.nudgeHour !== '' && this.cfg.wanikaniToken) {
       jobs.push({
         key: 'nudge',
@@ -130,11 +141,31 @@ export class Scheduler {
         .catch((e) => this.log(`Job ${job.key} failed:`, (e as Error).message))
         .finally(() => this.running.delete(job.key));
     }
+    if (!this.running.has('weight')) {
+      this.running.add('weight');
+      await this.syncWeight(now)
+        .catch((e) => this.log('Weight sync failed:', (e as Error).message))
+        .finally(() => this.running.delete('weight'));
+    }
     if (this.cfg.notifyChats.length && !this.running.has('aqi')) {
       this.running.add('aqi');
       await this.aqiAlert(now)
         .catch((e) => this.log('AQI check failed:', (e as Error).message))
         .finally(() => this.running.delete('aqi'));
+    }
+  }
+
+  private lastWeightSync = 0;
+
+  /** Hourly: copies new smart-scale weigh-ins from Health Sync into the weight history (for BMI and targets). */
+  async syncWeight(now: Date) {
+    const sync = this.health?.sync;
+    if (!sync || !this.cfg.notifyChats.length || now.getTime() - this.lastWeightSync < 3_600_000) return;
+    this.lastWeightSync = now.getTime();
+    const w = await sync.latestWeighIn();
+    if (!w) return;
+    for (const chat of this.cfg.notifyChats) {
+      if (!this.store.weights(chat).some((x) => x.day === w.day && x.kg === w.kg)) this.store.logWeight(chat, w.day, w.kg);
     }
   }
 

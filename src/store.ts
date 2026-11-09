@@ -31,6 +31,33 @@ export interface Todo {
   createdAt: string;
 }
 
+export interface FoodEntry {
+  id: number;
+  /** ISO instant the food was eaten. */
+  ts: string;
+  /** Local day YYYY-MM-DD. */
+  day: string;
+  meal: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  name: string;
+  portion: string;
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+}
+
+export interface BodyProfile {
+  sex?: 'male' | 'female';
+  /** Birth year, so the age stays right. */
+  birthYear?: number;
+  heightCm?: number;
+  weightKg?: number;
+  activity?: 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
+  goal?: 'lose' | 'maintain' | 'gain';
+  /** Own daily calorie target, overriding the calculated one. */
+  targetKcal?: number;
+}
+
 export interface City {
   name: string;
   country?: string;
@@ -45,6 +72,19 @@ export interface Settings {
   translateTo?: string;
   newsTopics?: string[];
   city?: City;
+  /** Name the bot calls itself (overrides BOT_NAME). */
+  botName?: string;
+  /** Ready-made personality key from personas.ts, or "custom". */
+  personaKey?: string;
+  /** Personality description (a preset's text, or the user's own). */
+  persona?: string;
+  /** Gemini prebuilt voice for spoken replies, and how to speak. */
+  ttsVoice?: string;
+  speakingStyle?: string;
+  /** JLPT level for kanji/word of the day when WaniKani isn't connected. */
+  jlptLevel?: 'N5' | 'N4' | 'N3' | 'N2' | 'N1';
+  /** Active roleplay scene, if any. */
+  roleplay?: { scenario: string; startedAt: string };
   /** Speak replies: never, only when answering a voice note, or always. */
   voiceReplies?: 'off' | 'voice-notes' | 'always';
 }
@@ -71,11 +111,29 @@ interface Data {
   reminders: Reminder[];
   settings: Settings;
   usage: UsageRow[];
+  /** Kanji and words already sent as "of the day", newest last. */
+  japanese: { kanji: string[]; words: string[] };
+  food: Record<string, FoodEntry[]>;
+  body: Record<string, BodyProfile>;
+  weights: Record<string, { day: string; kg: number }[]>;
   /** Last local day (YYYY-MM-DD) each scheduled job or one-a-day alert ran. */
   ranOn: Record<string, string>;
 }
 
-const empty = (): Data => ({ nextId: 1, history: {}, memories: {}, todos: {}, reminders: [], settings: {}, usage: [], ranOn: {} });
+const empty = (): Data => ({
+  nextId: 1,
+  history: {},
+  memories: {},
+  todos: {},
+  reminders: [],
+  settings: {},
+  usage: [],
+  japanese: { kanji: [], words: [] },
+  food: {},
+  body: {},
+  weights: {},
+  ranOn: {},
+});
 
 /**
  * Tiny JSON-file store. Fine for a personal bot with a handful of chats;
@@ -246,6 +304,61 @@ export class Store {
       this.save();
     }
     return old;
+  }
+
+  // --- Japanese of the day ---
+
+  japaneseHistory(): { kanji: string[]; words: string[] } {
+    return this.data.japanese;
+  }
+
+  addJapanese(kind: 'kanji' | 'words', item: string) {
+    const list = this.data.japanese[kind].filter((x) => x !== item);
+    this.data.japanese[kind] = [...list, item].slice(-500);
+    this.save();
+  }
+
+  // --- food and body ---
+
+  food(chatKey: string, day?: string): FoodEntry[] {
+    const all = this.data.food[chatKey] ?? [];
+    return day ? all.filter((f) => f.day === day) : all;
+  }
+
+  addFood(chatKey: string, entry: Omit<FoodEntry, 'id'>): FoodEntry {
+    const f = { ...entry, id: this.data.nextId++ };
+    // Keep about a year of entries.
+    this.data.food[chatKey] = [...(this.data.food[chatKey] ?? []), f].slice(-3000);
+    this.save();
+    return f;
+  }
+
+  removeFood(chatKey: string, id: number): FoodEntry | null {
+    const f = this.food(chatKey).find((x) => x.id === id) ?? null;
+    if (f) {
+      this.data.food[chatKey] = this.food(chatKey).filter((x) => x.id !== id);
+      this.save();
+    }
+    return f;
+  }
+
+  body(chatKey: string): BodyProfile {
+    return this.data.body[chatKey] ?? {};
+  }
+
+  updateBody(chatKey: string, patch: Partial<BodyProfile>) {
+    this.data.body[chatKey] = { ...this.body(chatKey), ...patch };
+    this.save();
+  }
+
+  weights(chatKey: string): { day: string; kg: number }[] {
+    return this.data.weights[chatKey] ?? [];
+  }
+
+  logWeight(chatKey: string, day: string, kg: number) {
+    const list = this.weights(chatKey).filter((w) => w.day !== day);
+    this.data.weights[chatKey] = [...list, { day, kg }].sort((a, b) => a.day.localeCompare(b.day)).slice(-1000);
+    this.updateBody(chatKey, { weightKg: kg });
   }
 
   // --- once-a-day bookkeeping ---

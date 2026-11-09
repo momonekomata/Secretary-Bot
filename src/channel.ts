@@ -6,6 +6,7 @@ import type { GenerateContent } from './llm/gemini';
 import type { Store } from './store';
 import { speakable, synthesize, toGeminiAudio, type Speech } from './audio';
 import { fileToInput, UserFacingError } from './documents';
+import type { JapaneseDaily } from './japanese';
 import { formatTime } from './time';
 import { airQuality, forecast, formatWeather, reverseGeocode } from './weather';
 import { transcribe, voicePrompt, type AudioInput } from './voice';
@@ -83,6 +84,7 @@ export class Secretary {
     /** Gemini, for voice transcription; null when GEMINI_API_KEY is missing. */
     private readonly gemini: GenerateContent | null,
     private readonly status: () => Promise<string>,
+    private readonly japanese?: JapaneseDaily,
   ) {}
 
   private allowList(platform: IncomingMessage['platform']) {
@@ -97,7 +99,7 @@ export class Secretary {
 
   /** Returns the reply to send, or null to stay silent. */
   async handle(m: IncomingMessage): Promise<CommandReply | null> {
-    const ctx = { chatKey: m.chatKey, userId: m.userId, agent: this.agent, store: this.store, cfg: this.cfg, briefings: this.briefings, status: this.status };
+    const ctx = { chatKey: m.chatKey, userId: m.userId, agent: this.agent, store: this.store, cfg: this.cfg, briefings: this.briefings, status: this.status, japanese: this.japanese };
     if (m.text.startsWith('/id')) return runCommand('/id', ctx);
 
     const allowed = this.allowList(m.platform);
@@ -156,7 +158,9 @@ export class Secretary {
     const spoken = speakable(text);
     if (!spoken) return null;
     this.agent.checkBudget();
-    return synthesize(this.gemini, this.cfg.ttsModel, this.cfg.ttsVoice, spoken, (u) => this.agent.recordUsage(u, 'speech'));
+    const s = this.store.settings();
+    const prompt = s.speakingStyle ? `Say ${s.speakingStyle}: ${spoken}` : spoken;
+    return synthesize(this.gemini, this.cfg.ttsModel, s.ttsVoice ?? this.cfg.ttsVoice, prompt, (u) => this.agent.recordUsage(u, 'speech'));
   }
 
   private async voice(m: IncomingMessage): Promise<{ text: string; reply?: string }> {

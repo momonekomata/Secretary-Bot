@@ -2,9 +2,12 @@ import type { Config } from './config';
 import { formatEmails, formatEvents, formatTasks, type Google, type GoogleFeature } from './google';
 import type { ToolResult, ToolSpec } from './llm/types';
 import { formatPlaces, TRAVEL_MODES, type Maps, type TravelMode } from './maps';
+import { ACTIVITY, bodyNumbers, formatBody, formatFoodDay, MEALS } from './health';
+import { history, type HealthData } from './healthdb';
+import { formatDay as formatWatchDay } from './healthsync';
 import { fetchNews, formatNews } from './news';
 import type { City, Store } from './store';
-import { formatTime, REPEATS, type Repeat } from './time';
+import { formatTime, localDay, REPEATS, type Repeat } from './time';
 import { airQuality, forecast, formatWeather, geocode } from './weather';
 import { fetchWaniKani } from './wanikani';
 
@@ -15,6 +18,7 @@ export interface ToolContext {
   cfg: Pick<Config, 'timezone' | 'wanikaniToken' | 'news' | 'weather'>;
   google: Google | null;
   maps?: Maps | null;
+  health?: HealthData | null;
   /** Has the AI read a PDF (e.g. one opened from Drive) and return its text. */
   readPdf?: (name: string, pdf: Buffer) => Promise<string>;
   now?: () => Date;
@@ -63,6 +67,89 @@ const CORE: ToolSpec[] = [
     name: 'get_weather',
     description: 'Get the current weather, a 7-day forecast and air quality (US AQI, PM2.5) for a city.',
     parameters: obj({ city: str('City name, or "" for the user\'s home city or shared location.'), days: int('Days of forecast to include, 1-7.') }),
+  },
+];
+
+const num = (description: string) => ({ type: 'number', description });
+const oneOf = (values: readonly string[], description: string) => ({ type: 'string', enum: [...values], description });
+
+const HEALTH: ToolSpec[] = [
+  {
+    name: 'food_log_add',
+    description:
+      'Log food the user ate (from their message or a food photo) with your best average estimate of calories and macros per item. ' +
+      'Split dishes into items, estimate realistic portions (Thai street-food portions when relevant), and log without asking unless the food is unclear.',
+    parameters: obj({
+      meal: oneOf(MEALS, 'Which meal; guess from the time of day if not said.'),
+      eaten_at: str('When it was eaten, ISO 8601 with offset, or "" for now.'),
+      items: {
+        type: 'array',
+        description: 'Foods eaten.',
+        items: obj({
+          name: str('Food name, e.g. "Pad kra pao moo with fried egg".'),
+          portion: str('Portion, e.g. "1 plate", "250 ml".'),
+          kcal: num('Calories (kcal).'),
+          protein_g: num('Protein in grams.'),
+          carbs_g: num('Carbohydrates in grams.'),
+          fat_g: num('Fat in grams.'),
+        }),
+      },
+    }),
+  },
+  {
+    name: 'food_log_day',
+    description: "Show the user's food log and calorie total for a day, against their daily target.",
+    parameters: obj({ date: str('Day YYYY-MM-DD, or "" for today.') }),
+  },
+  { name: 'food_log_remove', description: 'Remove a wrongly logged food entry by its # id.', parameters: obj({ id: int('Entry id.') }) },
+  {
+    name: 'body_profile_update',
+    description:
+      "Save the user's body details for BMI and calorie targets. Pass \"\" or 0 for anything not mentioned (it stays as it was). Weight changes are also kept as a weight history.",
+    parameters: obj({
+      sex: oneOf(['', 'male', 'female'], 'For the BMR formula.'),
+      age: int('Age in years, or 0.'),
+      height_cm: num('Height in cm, or 0.'),
+      weight_kg: num('Weight in kg, or 0.'),
+      activity: oneOf(['', ...Object.keys(ACTIVITY)], 'sedentary, light (1-3 days/week), moderate (3-5), active (6-7), very_active.'),
+      goal: oneOf(['', 'lose', 'maintain', 'gain'], 'Weight goal.'),
+      target_kcal: int('Their own daily calorie target, or 0 to calculate it.'),
+    }),
+  },
+  { name: 'body_stats', description: "The user's BMI, BMR, daily calorie burn and target, and recent weight history.", parameters: obj({}) },
+];
+
+const WATCH: ToolSpec[] = [
+  {
+    name: 'watch_health_data',
+    description:
+      "The user's Samsung watch and smart-scale data, day by day: sleep (stages, bed and wake times), steps, calories burned, heart rate, SpO2, workouts and weigh-ins with body fat, muscle and BMR. Today's data may be incomplete until the next sync.",
+    parameters: obj({ days: int('How many days back, including today, 1-14.') }),
+  },
+  {
+    name: 'health_history',
+    description:
+      'Long-term health trends from the stored history (Samsung Health export plus everything synced since): weekly or monthly averages of steps, sleep, lowest heart rate and calories burned, weight change and workouts.',
+    parameters: obj({
+      from: str('Start day YYYY-MM-DD.'),
+      to: str('End day YYYY-MM-DD, or "" for today.'),
+      group: { type: 'string', enum: ['week', 'month'], description: 'Group by week or month.' },
+    }),
+  },
+];
+
+const ROLEPLAY: ToolSpec[] = [
+  {
+    name: 'roleplay_start',
+    description:
+      'Start a roleplay scene when the user asks for one (e.g. a story, a character to talk to, or Japanese conversation practice like ordering ramen in Tokyo).',
+    parameters: obj({ scenario: str('The scene: setting, who you play, who the user is, and the language to use.') }),
+  },
+  { name: 'roleplay_end', description: 'End the current roleplay scene and go back to being the normal assistant.', parameters: obj({}) },
+  {
+    name: 'japanese_history',
+    description: 'The kanji and words sent as "of the day" recently, newest last, e.g. to quiz the user on them.',
+    parameters: obj({}),
   },
 ];
 
@@ -216,7 +303,7 @@ const MAPS: ToolSpec[] = [
 
 export function toolSpecs(opts: { wanikani: boolean; google: Google | null; maps: boolean }): ToolSpec[] {
   const g = opts.google;
-  return [...CORE, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(opts.maps ? MAPS : [])];
+  return [...CORE, ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : [])];
 }
 
 const STAGES = ['Lesson', 'Apprentice 1', 'Apprentice 2', 'Apprentice 3', 'Apprentice 4', 'Guru 1', 'Guru 2', 'Master', 'Enlightened', 'Burned'];
@@ -302,6 +389,82 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
         return ok(formatNews(s('topic') || 'Top stories', await fetchNews(s('topic') || null, ctx.cfg.news)));
       case 'get_weather':
         return ok(await weatherText(ctx.store, ctx.cfg.weather.defaultCity, s('city'), Number(a.days) || 1));
+      case 'food_log_add': {
+        const meal = ((MEALS as readonly string[]).includes(s('meal')) ? s('meal') : 'snack') as (typeof MEALS)[number];
+        const when = s('eaten_at') && !Number.isNaN(Date.parse(s('eaten_at'))) ? new Date(s('eaten_at')) : now;
+        const items = Array.isArray(a.items) ? (a.items as Record<string, unknown>[]) : [];
+        if (!items.length) return fail('No food items given.');
+        const n = (v: unknown) => Math.max(0, Math.round(Number(v) || 0));
+        const added = items.map((it) =>
+          ctx.store.addFood(ctx.chatKey, {
+            ts: when.toISOString(),
+            day: localDay(when, tz),
+            meal,
+            name: String(it.name ?? 'food').slice(0, 120),
+            portion: String(it.portion ?? '').slice(0, 60),
+            kcal: n(it.kcal),
+            protein: n(it.protein_g),
+            carbs: n(it.carbs_g),
+            fat: n(it.fat_g),
+          }),
+        );
+        const day = localDay(when, tz);
+        const nums = bodyNumbers(ctx.store.body(ctx.chatKey), Number(day.slice(0, 4)));
+        return ok(
+          `Logged ${added.map((f) => `#${f.id} ${f.name} ${f.kcal} kcal`).join(', ')}.\n` +
+            formatFoodDay(ctx.store.food(ctx.chatKey, day), 'missing' in nums ? null : nums.target, day === localDay(now, tz) ? 'Today' : day),
+        );
+      }
+      case 'food_log_day': {
+        const day = /^\d{4}-\d{2}-\d{2}$/.test(s('date')) ? s('date') : localDay(now, tz);
+        const nums = bodyNumbers(ctx.store.body(ctx.chatKey), Number(day.slice(0, 4)));
+        return ok(formatFoodDay(ctx.store.food(ctx.chatKey, day), 'missing' in nums ? null : nums.target, day === localDay(now, tz) ? 'Today' : day));
+      }
+      case 'food_log_remove': {
+        const f = ctx.store.removeFood(ctx.chatKey, Number(a.id));
+        return f ? ok(`Removed ${f.name} (${f.kcal} kcal).`) : fail(`No food entry #${a.id}.`);
+      }
+      case 'body_profile_update': {
+        const year = Number(localDay(now, tz).slice(0, 4));
+        const patch: Record<string, unknown> = {};
+        if (s('sex') === 'male' || s('sex') === 'female') patch.sex = s('sex');
+        if (Number(a.age) > 0) patch.birthYear = year - Math.round(Number(a.age));
+        if (Number(a.height_cm) > 50) patch.heightCm = Number(a.height_cm);
+        if (s('activity') in ACTIVITY) patch.activity = s('activity');
+        if (['lose', 'maintain', 'gain'].includes(s('goal'))) patch.goal = s('goal');
+        if (Number(a.target_kcal) > 0) patch.targetKcal = Math.round(Number(a.target_kcal));
+        ctx.store.updateBody(ctx.chatKey, patch);
+        if (Number(a.weight_kg) > 20) ctx.store.logWeight(ctx.chatKey, localDay(now, tz), Math.round(Number(a.weight_kg) * 10) / 10);
+        return ok(`Saved.\n${formatBody(ctx.store.body(ctx.chatKey), year)}`);
+      }
+      case 'body_stats': {
+        const w = ctx.store.weights(ctx.chatKey).slice(-8);
+        return ok(`${formatBody(ctx.store.body(ctx.chatKey), Number(localDay(now, tz).slice(0, 4)))}${w.length ? `\nWeight history: ${w.map((x) => `${x.day} ${x.kg} kg`).join(', ')}` : ''}`);
+      }
+      case 'watch_health_data': {
+        if (!ctx.health) return fail('Watch data is not available.');
+        const days = Math.min(14, Math.max(1, Number(a.days) || 1));
+        const summaries = await ctx.health.lastDays(days, now, tz);
+        return ok(`Samsung Health data from the user's watch and scale, oldest first:\n${summaries.map(formatWatchDay).join('\n')}`);
+      }
+      case 'health_history': {
+        if (!ctx.health) return fail('Health history is not available.');
+        const from = /^\d{4}-\d{2}-\d{2}$/.test(s('from')) ? s('from') : localDay(new Date(now.getTime() - 90 * 864e5), tz);
+        const to = /^\d{4}-\d{2}-\d{2}$/.test(s('to')) ? s('to') : localDay(now, tz);
+        const rows = ctx.health.db.range(from, to);
+        return ok(`Health history ${from} to ${to}, ${rows.length} days with data:\n${history(rows, s('group') === 'week' ? 'week' : 'month')}`);
+      }
+      case 'roleplay_start':
+        if (!s('scenario')) return fail('Describe the scene.');
+        ctx.store.updateSettings({ roleplay: { scenario: s('scenario').slice(0, 1500), startedAt: now.toISOString() } });
+        return ok('Roleplay started. Open the scene in character now. The user can end it with /roleplay end.');
+      case 'roleplay_end':
+        ctx.store.updateSettings({ roleplay: undefined });
+        return ok('Roleplay ended. You are back to your normal self.');
+      case 'japanese_history': {
+        const h = ctx.store.japaneseHistory();
+        return ok(`Kanji of the day (oldest first): ${h.kanji.slice(-30).join(' ') || 'none yet'}\nWords of the day: ${h.words.slice(-30).join('、') || 'none yet'}`);
+      }
       case 'get_wanikani_status':
         if (!ctx.cfg.wanikaniToken) return fail('WaniKani is not connected (WANIKANI_TOKEN is not set).');
         return ok(await wanikaniText(ctx.cfg.wanikaniToken, tz));

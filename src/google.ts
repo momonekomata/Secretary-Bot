@@ -470,6 +470,32 @@ export class Google {
     return { name, mimeType, text: `(${name} is a ${mimeType} file, which I can't read. PDFs, Word, Google Docs/Sheets/Slides and text files work.)` };
   }
 
+  /** Lists Drive files matching a Drive query (ids, names, times). */
+  async listFiles(q: string, orderBy = 'modifiedTime desc', max = 50): Promise<{ id: string; name: string; modifiedTime: string }[]> {
+    const r = await this.api<{ files?: { id: string; name: string; modifiedTime: string }[] }>(
+      `https://www.googleapis.com/drive/v3/files?${new URLSearchParams({ q, orderBy, pageSize: String(max), fields: 'files(id,name,modifiedTime)' })}`,
+    );
+    return r.files ?? [];
+  }
+
+  /** Downloads a (small) Drive file as text. */
+  async downloadText(fileId: string): Promise<string> {
+    const res = await this.request(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`);
+    return res.text();
+  }
+
+  /** Streams a Drive file to disk (for big files such as a Samsung Health export). */
+  async downloadToFile(fileId: string, path: string): Promise<number> {
+    const { createWriteStream } = await import('node:fs');
+    const { Readable } = await import('node:stream');
+    const { pipeline } = await import('node:stream/promises');
+    const res = await this.request(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`);
+    if (!res.body) throw new Error('Empty download');
+    const out = createWriteStream(path);
+    await pipeline(Readable.fromWeb(res.body as import('node:stream/web').ReadableStream), out);
+    return out.bytesWritten;
+  }
+
   // --- Docs ---
 
   /** Creates a Google Doc with `text` and returns its link. */

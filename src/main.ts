@@ -10,6 +10,7 @@ import { GeminiProvider, type GenerateContent } from './llm/gemini';
 import { Line, verifyLineSignature } from './line';
 import { hasFfmpeg } from './audio';
 import { FileHost } from './files';
+import { JapaneseDaily } from './japanese';
 import { Maps } from './maps';
 import { modelInfo } from './models';
 import { Scheduler } from './scheduler';
@@ -36,10 +37,11 @@ try {
 const maps = config.mapsKey ? new Maps(config.mapsKey) : null;
 const agent = new Agent(config, store, providers, google, () => new Date(), maps);
 const briefings = new Briefings(config, store, agent);
+const japanese = new JapaneseDaily(config, store, agent);
 
 /** /status: what is configured and whether it works. */
 async function status(): Promise<string> {
-  const lines = [`🩺 ${config.botName} status (version ${config.version})`];
+  const lines = [`🩺 ${agent.botName} status (version ${config.version})`];
   const model = modelInfo(agent.model);
   lines.push(`AI model: ${model.label} (${model.id})${agent.hasProvider(model.provider) ? '' : ' ⚠️ its API key is missing'}`);
   lines.push(`Gemini key: ${config.geminiKey ? '✅' : '❌ not set (needed for Gemini models and voice notes)'}`);
@@ -66,6 +68,8 @@ async function status(): Promise<string> {
     }
   } else lines.push('Google: — not connected (run `npm run google-auth`)');
   lines.push(`Telegram: ${config.telegram.token ? `✅ ${config.telegram.mode}` : '— off'}  LINE: ${config.line.accessToken ? '✅' : '— off'}`);
+  const s = store.settings();
+  lines.push(`Personality: ${s.personaKey ?? 'default'}${s.ttsVoice ? `, voice ${s.ttsVoice}` : ''}`);
   lines.push(`Google Maps: ${maps ? '✅' : '— off (GOOGLE_MAPS_API_KEY)'}  WaniKani: ${config.wanikaniToken ? '✅' : '— off'}`);
   const voiceMode = store.settings().voiceReplies ?? config.defaultVoiceReplies;
   lines.push(
@@ -74,14 +78,14 @@ async function status(): Promise<string> {
   );
   lines.push(
     `Scheduled messages go to: ${config.notifyChats.join(', ') || '⚠️ nobody (set BOT_NOTIFY_CHATS to your chat from /id)'}`,
-    `Weather ${config.schedule.weather || 'off'}, briefing ${config.schedule.briefing || 'off'}, weekend planner ${config.schedule.weekendDay} ${config.schedule.weekend || 'off'}, cleanup ${config.schedule.cleanup || 'off'} (${config.timezone})`,
+    `Kanji & word of the day ${config.schedule.japanese || 'off'}, weather ${config.schedule.weather || 'off'}, briefing ${config.schedule.briefing || 'off'}, weekend planner ${config.schedule.weekendDay} ${config.schedule.weekend || 'off'}, cleanup ${config.schedule.cleanup || 'off'} (${config.timezone})`,
   );
   const b = config.billing;
   lines.push(`Spending today: $${agent.spentToday().toFixed(4)}${b.warnUsd !== null ? `, warn at $${b.warnUsd}` : ''}${b.capUsd !== null ? `, cap $${b.capUsd}` : ''}`);
   return lines.join('\n');
 }
 
-const secretary = new Secretary(config, store, agent, briefings, geminiGenerate, status);
+const secretary = new Secretary(config, store, agent, briefings, geminiGenerate, status, japanese);
 const channels = new Channels();
 const telegram = config.telegram.token ? new Telegram(config.telegram, secretary) : null;
 const files = new FileHost(config.publicUrl);
@@ -165,7 +169,7 @@ if (telegram) {
   }
 }
 
-const scheduler = new Scheduler(config, store, channels, briefings);
+const scheduler = new Scheduler(config, store, channels, briefings, console.log, japanese, agent.health);
 scheduler.start();
 
 // Tell the owner a new version is running (e.g. after Watchtower updated the container).
@@ -174,7 +178,7 @@ if (config.announceStartup && config.version !== 'dev') {
   if (lastVersion !== config.version) {
     store.markRan('startup-version', config.version);
     for (const chat of config.notifyChats) {
-      void channels.send(chat, `✅ ${config.botName} updated and running (version ${config.version}).`).catch(() => undefined);
+      void channels.send(chat, `✅ ${agent.botName} updated and running (version ${config.version}).`).catch(() => undefined);
     }
   }
 }

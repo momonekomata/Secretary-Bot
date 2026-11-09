@@ -113,6 +113,18 @@ In Telegram, search for your bot's username, open it, and press **Start**. It re
 
 - `/help` shows everything it can do. Tap the **/** button in Telegram for the command menu.
 - `/settings` lets you switch between Gemini and Claude, and set how hard it thinks, with buttons.
+- `/kanji` and `/word` show the kanji and word of the day (also sent every day at 12:00 once Part 2 is done); `/jlpt N4` sets the level.
+- Tell it what you ate (*"lunch was khao man gai and a Thai iced tea"*) or send a photo of your food: it logs the calories. `/food` shows today.
+  Tell it your age, height, weight and how much you exercise, then `/bmi` gives your BMI, BMR and daily calorie target. `/weight 65.5` logs your weight.
+- **Samsung watch:** if the Health Sync app uploads your Samsung Health data to Google Drive (folders named "Health Sync …"), the bot reads it
+  once Google is connected (Part 3): `/health` shows steps, heart rate, SpO2, workouts and scale readings, your morning briefing gets a
+  summary (last night's sleep, yesterday's steps, calories and workouts), and new weigh-ins go into your weight history.
+  For older history, export everything from Samsung Health (**Settings → Download personal data**), upload the .zip or .rar to Google Drive,
+  and send `/healthimport`. It takes a few minutes and replies with what it imported.
+- `/roleplay` starts a scene: a story, a mystery, or Japanese conversation practice like ordering ramen in Tokyo. `/roleplay end` stops.
+- `/forecast` gives 7 days of weather.
+- `/persona` gives it a personality: tap a ready-made one, or describe your own, e.g.
+  `/persona a cheerful Thai older sister who reminds me to drink water and calls me น้อง`. `/name Mali` renames it.
 - `/news` gives you a news briefing; `/weather` today's weather and air quality; `/weekend` a weekend planner.
 - `/add Call the dentist` and `/todo` manage a to-do list.
 - Hold the 🎤 button and **send a voice note** (in Thai, English or Japanese): it transcribes it, translates it, summarises it,
