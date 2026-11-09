@@ -122,3 +122,28 @@ describe('Samsung Health export import', () => {
     expect((await health.day('2025-03-04')).workouts).toHaveLength(1);
   });
 });
+
+describe('export file variants', () => {
+  it('recognises the banner with a trailing comma, a byte-order mark or extra fields', async () => {
+    const { isBanner } = await import('../samsungexport');
+    expect(isBanner('com.samsung.health.weight,6313008,3')).toBe(true);
+    expect(isBanner('com.samsung.health.weight,6313008,3,')).toBe(true);
+    expect(isBanner('﻿com.samsung.shealth.tracker.heart_rate,6313005,32')).toBe(true);
+    expect(isBanner('com.samsung.health.weight,6313008,3,1')).toBe(true);
+    expect(isBanner('com.samsung.health.weight.start_time,com.samsung.health.weight.weight')).toBe(false);
+  });
+
+  it('reads files whose banner has a trailing comma and a BOM, and explains types that give no days', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sb-variant-'));
+    writeFileSync(
+      join(dir, 'com.samsung.health.weight.20261109212464.csv'),
+      '﻿com.samsung.health.weight,6313008,3,\nstart_time,weight,time_offset,\n2025-03-01 23:30:00.000,72.4,UTC+0700,\n',
+    );
+    writeFileSync(join(dir, 'com.samsung.shealth.tracker.heart_rate.20261109212464.csv'), 'com.samsung.shealth.tracker.heart_rate,1,1,\nodd_time,bpm\nyesterday,60\n');
+    const { records, report } = await new SamsungImporter('Asia/Bangkok').importDir(dir);
+    expect(records['2025-03-02']).toMatchObject({ weight: { kg: 72.4 } });
+    const text = formatReport({ file: 'x.rar', ...report }, 1);
+    expect(text).toContain('• weight: 1 rows, 1 days');
+    expect(text).toContain('• tracker.heart_rate: 1 rows, 0 days\n   columns: odd_time, bpm');
+  });
+});

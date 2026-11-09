@@ -20,8 +20,14 @@ export function exportType(file: string): string | null {
   return m ? m[1] : null;
 }
 
+/** The "com.samsung.shealth.tracker.pedometer_day_summary,6313005,32" line before the header. */
+export function isBanner(line: string): boolean {
+  const cells = splitCsvLine(line.replace(/^\uFEFF/, '')).filter((c, i, all) => c !== '' || i < all.length - 1);
+  return /^com\.samsung\./.test(cells[0] ?? '') && cells.length <= 5 && /^\d+$/.test(cells[1] ?? '');
+}
+
 /** Column name without its "com.samsung.health.weight." prefix. */
-const shortName = (c: string) => c.split('.').pop()!.trim();
+const shortName = (c: string) => c.replace(/^\uFEFF/, '').split('.').pop()!.trim();
 
 /** "UTC+0700" → minutes. */
 function offsetMinutes(s: string | undefined): number | null {
@@ -54,7 +60,8 @@ const STAGES: Record<string, 'awake' | 'light' | 'deep' | 'rem'> = { '40001': 'a
 
 export interface ImportReport {
   file: string;
-  types: Record<string, { rows: number; days: number }>;
+  /** Per data type; columns and a sample time value are kept to explain a type that gave no days. */
+  types: Record<string, { rows: number; days: number; columns?: string[]; sample?: string }>;
   skipped: string[];
   days: number;
   from: string;
@@ -89,15 +96,20 @@ export class SamsungImporter {
     return new Date(ms + off * 60_000).toISOString().slice(11, 16);
   }
 
-  /** Reads one export CSV (first line is a "com.samsung…,version,count" banner, then the header). */
-  async readFile(path: string, onRow: (row: R) => void): Promise<number> {
+  /**
+   * Reads one export CSV. The first line is usually a banner such as "com.samsung.health.weight,6313008,3"
+   * (sometimes with a trailing comma, or after a byte-order mark), then the header.
+   */
+  async readFile(path: string, onRow: (row: R) => void): Promise<{ rows: number; columns: string[]; sample: string }> {
     const rl = createInterface({ input: createReadStream(path, 'utf8'), crlfDelay: Infinity });
     let header: string[] | null = null;
     let n = 0;
-    for await (const line of rl) {
+    let sample = '';
+    for await (const raw of rl) {
+      const line = raw.replace(/^\uFEFF/, '');
       if (!line.trim()) continue;
       if (!header) {
-        if (/^com\.samsung\.[\w.]+,\d+,\d+\s*$/.test(line)) continue; // banner
+        if (isBanner(line)) continue;
         header = splitCsvLine(line).map(shortName);
         continue;
       }
@@ -106,10 +118,11 @@ export class SamsungImporter {
       header.forEach((h, i) => {
         if (h && cells[i] !== undefined && cells[i] !== '') row[h] = cells[i];
       });
+      if (!sample) sample = row.start_time ?? row.day_time ?? row.create_time ?? row.end_time ?? '';
       onRow(row);
       n++;
     }
-    return n;
+    return { rows: n, columns: header ?? [], sample };
   }
 
   /** Reads every recognised CSV under `dir` into per-day records. */
@@ -144,11 +157,11 @@ export class SamsungImporter {
       }
       onFile?.(++index, usable, type);
       const seen = new Set<string>();
-      const rows = await this.readFile(file, (row) => {
+      const { rows, columns, sample } = await this.readFile(file, (row) => {
         const d = handler(row);
         if (d) seen.add(d);
       });
-      types[type] = { rows: (types[type]?.rows ?? 0) + rows, days: (types[type]?.days ?? 0) + seen.size };
+      types[type] = { rows: (types[type]?.rows ?? 0) + rows, days: (types[type]?.days ?? 0) + seen.size, columns, sample };
       this.log(`Imported ${rows} rows from ${basename(file)}`);
     }
 
@@ -427,7 +440,12 @@ export async function importFromDrive(google: Google, db: HealthDb, timeZone: st
 export function formatReport(r: ImportReport, dbDays: number): string {
   const types = Object.entries(r.types)
     .sort(([, a], [, b]) => b.days - a.days)
-    .map(([t, v]) => `• ${t}: ${v.rows.toLocaleString('en-US')} rows, ${v.days} days`);
+    .map(([t, v]) => {
+      const line = `• ${t}: ${v.rows.toLocaleString('en-US')} rows, ${v.days} days`;
+      // Explain a type that was read but gave no days, so the importer can be adjusted to this export.
+      if (v.days || !v.rows || !v.columns) return line;
+      return `${line}\n   columns: ${v.columns.slice(0, 10).join(', ')}${v.columns.length > 10 ? ', …' : ''}${v.sample ? `\n   first time value: ${v.sample}` : ''}`;
+    });
   return [
     `📦 Imported ${r.file}`,
     r.days ? `${r.days} days of data, ${r.from} to ${r.to}. The history now covers ${dbDays} days.` : 'No usable data found.',
