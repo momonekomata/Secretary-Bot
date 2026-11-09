@@ -6,7 +6,7 @@ import { HealthData, HealthDb } from './healthdb';
 import { HealthSync } from './healthsync';
 import type { Maps } from './maps';
 import { costOf, modelInfo, type ProviderName, type Usage } from './models';
-import type { Store } from './store';
+import type { LimitScope, Settings, Store } from './store';
 import { formatTime, localDay } from './time';
 import { runTool, toolSpecs } from './tools';
 
@@ -33,6 +33,32 @@ export type Providers = Partial<Record<ProviderName, Provider>>;
 export class BudgetExceeded extends Error {}
 
 const PROVIDER_NAMES: Record<ProviderName, string> = { gemini: 'Gemini', claude: 'Claude' };
+
+export interface Limit {
+  warnUsd: number | null;
+  capUsd: number | null;
+  /** Where each value comes from: set in chat (/limit) or the .env file. */
+  from: { warnUsd: 'chat' | 'env'; capUsd: 'chat' | 'env' };
+}
+
+/** The daily limits in force: values set in chat with /limit win over .env. */
+export function effectiveLimits(billing: Config['billing'], settings: Settings): Record<LimitScope, Limit> {
+  const env: Record<LimitScope, { warnUsd: number | null; capUsd: number | null }> = {
+    all: { warnUsd: billing.warnUsd, capUsd: billing.capUsd },
+    gemini: billing.providers.gemini,
+    claude: billing.providers.claude,
+  };
+  const out = {} as Record<LimitScope, Limit>;
+  for (const scope of ['all', 'gemini', 'claude'] as LimitScope[]) {
+    const o = settings.limits?.[scope] ?? {};
+    out[scope] = {
+      warnUsd: o.warnUsd !== undefined ? o.warnUsd : env[scope].warnUsd,
+      capUsd: o.capUsd !== undefined ? o.capUsd : env[scope].capUsd,
+      from: { warnUsd: o.warnUsd !== undefined ? 'chat' : 'env', capUsd: o.capUsd !== undefined ? 'chat' : 'env' },
+    };
+  }
+  return out;
+}
 
 export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: boolean, personality = '', preferences: string[] = []): string {
   return [
@@ -160,15 +186,21 @@ export class Agent {
    * Throws BudgetExceeded when today's spend has reached the overall cap, or the cap of the provider about to
    * be used (by default the selected model's provider).
    */
+  /** Daily limits in force (chat settings over .env). */
+  limits(): Record<LimitScope, Limit> {
+    return effectiveLimits(this.cfg.billing, this.store.settings());
+  }
+
   checkBudget(provider: ProviderName = modelInfo(this.model).provider) {
-    const total = this.cfg.billing.capUsd;
+    const limits = this.limits();
+    const total = limits.all.capUsd;
     if (total !== null && this.spentToday() >= total) {
       throw new BudgetExceeded(
         `🛑 Daily spending cap reached: $${this.spentToday().toFixed(4)} of $${total.toFixed(2)}.\n` +
-          'AI features are paused to protect your wallet and unlock again at midnight. Commands like /todo and /stats still work.',
+          'AI features are paused to protect your wallet and unlock again at midnight. Commands like /todo and /stats still work. Change the limit with /limit.',
       );
     }
-    const cap = this.cfg.billing.providers[provider].capUsd;
+    const cap = limits[provider].capUsd;
     const spent = this.spentToday(provider);
     if (cap !== null && spent >= cap) {
       const other: ProviderName = provider === 'gemini' ? 'claude' : 'gemini';
@@ -176,7 +208,8 @@ export class Agent {
       throw new BudgetExceeded(
         `🛑 ${PROVIDER_NAMES[provider]}'s daily cap reached: $${spent.toFixed(4)} of $${cap.toFixed(2)}. ${PROVIDER_NAMES[provider]} is paused until midnight.` +
           (canSwitch ? `\nYou can switch to ${PROVIDER_NAMES[other]} in /settings meanwhile.` : '') +
-          (provider === 'gemini' ? '\n(Voice notes and spoken replies always use Gemini.)' : ''),
+          (provider === 'gemini' ? '\n(Voice notes and spoken replies always use Gemini.)' : '') +
+          '\nChange the limit with /limit.',
       );
     }
   }
@@ -184,17 +217,11 @@ export class Agent {
   /** One-time-per-day warnings once spend passes the overall or a provider's warning level. */
   private budgetFooter(): string {
     const today = localDay(this.now(), this.cfg.timezone);
-    const b = this.cfg.billing;
+    const l = this.limits();
     const checks: [string, string, number | null, number | null, number][] = [
-      ['billing-warning', "today's AI spend", b.warnUsd, b.capUsd, this.spentToday()],
-      ...(Object.keys(b.providers) as ProviderName[]).map(
-        (p): [string, string, number | null, number | null, number] => [
-          `billing-warning:${p}`,
-          `${PROVIDER_NAMES[p]} today`,
-          b.providers[p].warnUsd,
-          b.providers[p].capUsd,
-          this.spentToday(p),
-        ],
+      ['billing-warning', "today's AI spend", l.all.warnUsd, l.all.capUsd, this.spentToday()],
+      ...(['gemini', 'claude'] as ProviderName[]).map(
+        (p): [string, string, number | null, number | null, number] => [`billing-warning:${p}`, `${PROVIDER_NAMES[p]} today`, l[p].warnUsd, l[p].capUsd, this.spentToday(p)],
       ),
     ];
     const lines: string[] = [];

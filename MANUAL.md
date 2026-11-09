@@ -156,6 +156,7 @@ It remembers the recent conversation. `/reset` forgets the conversation but keep
 | `/model <id>` | Switch model directly, e.g. `/model claude-sonnet-5-5` |
 | `/effort low\|medium\|high` | How hard the AI thinks |
 | `/stats` | AI usage and cost (today, this week, this month) |
+| `/limit` | Daily spending limits in USD, with buttons; `/limit gemini 3`, `/limit claude warn 1`, `/limit all 5`, `/limit gemini off`, `/limit reset` |
 | `/cleanup` | Archive old usage logs now (also runs every night) |
 | `/export` | Download all your data as a .zip |
 
@@ -409,9 +410,16 @@ Switch with `/settings` (buttons) or `/model <id>`:
 
 - **Thinking effort:** `/effort low|medium|high`. Higher effort gives better answers to hard questions but is slower and costs more.
 - **Costs:** `/stats` shows usage and cost. Voice transcription and spoken replies always use Gemini.
-- **Daily caps.** Set them in `.env`. A warning adds a note to replies; a hard limit pauses that AI until midnight.
-  - Per provider: `GEMINI_DAILY_WARNING_LIMIT_USD` / `GEMINI_DAILY_HARD_LIMIT_USD`, and the same for `CLAUDE_…`.
-  - Overall: `DAILY_WARNING_LIMIT_USD` / `DAILY_HARD_LIMIT_USD`.
+- **Daily limits (USD).** A warning adds a one-time note to a reply; a cap pauses that AI until midnight.
+  - Change them in chat with **`/limit`**. It shows today's spend and the limits, with buttons for common caps:
+    - `/limit gemini 3`: cap Gemini at $3 a day
+    - `/limit claude warn 1`: warn when Claude passes $1
+    - `/limit all 5`: cap all AI together
+    - `/limit gemini off`: no Gemini limits
+    - `/limit gemini reset` or `/limit reset`: back to the `.env` values
+  - Limits set in chat are saved with your settings and override `.env`. In `/limit` they're marked ✏️.
+  - Starting values come from `.env`: `GEMINI_DAILY_WARNING_LIMIT_USD` / `GEMINI_DAILY_HARD_LIMIT_USD`, the same for `CLAUDE_…`, and `DAILY_…` for the overall limit.
+  - Only you can change limits, with the command. The AI can't change them itself, so nothing in an email or web page can raise them.
 - Commands that just look things up (`/todo`, `/food`, `/budget`, `/calendar`, `/inbox`, `/forecast`, `/stats`…) don't use the AI.
 - Chat, photos, voice, briefings, `/news`, `/weather`, `/kanji`, `/word`, `/roleplay` and `/budget scan` do.
 
@@ -468,7 +476,7 @@ Edit `data/.env` on the NAS, then restart the container. Only the first group is
 | `VOICE_TRANSLATE_TO` | `English` | Voice note translation language |
 | `VOICE_REPLIES` | `voice-notes` | `off`, `voice-notes` or `always` |
 | `TTS_VOICE` | `Kore` | Speaking voice |
-| `GEMINI_…` / `CLAUDE_…` / `DAILY_…` `_WARNING_LIMIT_USD` / `_HARD_LIMIT_USD` | off | Daily cost caps |
+| `GEMINI_…` / `CLAUDE_…` / `DAILY_…` `_WARNING_LIMIT_USD` / `_HARD_LIMIT_USD` | off | Starting daily cost limits (change in chat with `/limit`) |
 | `LOG_RETENTION_DAYS` | `30` | Days of usage log kept before archiving |
 | `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_ALLOWED_USERS` | — | LINE (optional) |
 | `PUBLIC_URL` | — | Public address, needed for LINE and LINE file links |
@@ -494,7 +502,7 @@ Edit `data/.env` on the NAS, then restart the container. Only the first group is
 | The bot doesn't answer | `/status`; check the container is running in Container Manager; check your id is in `TELEGRAM_ALLOWED_USERS` (`/id`). |
 | "Google is not connected" | Run `npm run google-auth` again on your computer and copy the new `token.json` to `data/`. |
 | A feature says a key is missing | Add the key to `data/.env` and restart the container. |
-| "Daily limit reached" | A cost cap was hit; it resets at midnight, or raise the cap in `.env`. |
+| "Daily limit reached" | A cost cap was hit; it resets at midnight, or raise it now with `/limit` (e.g. `/limit gemini 1`). |
 | A slip or food was logged wrong | Tell it ("that was rent, not transfer"), or use `/budget edit`, `/budget remove`, `/food remove`. |
 | Health import shows 0 days | Send the import report to the developer; it lists the columns found in each file. |
 | It's "typing" for a long time | Big jobs (health import, email scan, long research) take a minute or two; `/healthimport status` shows import progress. |

@@ -121,7 +121,15 @@ export interface Settings {
   roleplay?: { scenario: string; startedAt: string };
   /** Speak replies: never, only when answering a voice note, or always. */
   voiceReplies?: 'off' | 'voice-notes' | 'always';
+  /**
+   * Daily AI spending limits (USD) set in chat with /limit, overriding the .env values.
+   * A missing field uses .env; null means off.
+   */
+  limits?: Partial<Record<LimitScope, { warnUsd?: number | null; capUsd?: number | null }>>;
 }
+
+/** "all" is the total across providers. */
+export type LimitScope = 'all' | 'gemini' | 'claude';
 
 export interface UsageRow {
   ts: string;

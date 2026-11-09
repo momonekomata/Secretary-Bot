@@ -16,7 +16,7 @@ import { formatDay as formatWatchDay } from './healthsync';
 import { buildExport } from './export';
 import { budgetAlerts, CATEGORY_KEYS, findCategory, report, scanEmail, scanSummary, txnLine } from './money';
 import { formatReport, healthImport, importFromDrive } from './samsungexport';
-import type { Store } from './store';
+import type { LimitScope, Store } from './store';
 import { geocode } from './weather';
 
 export interface Button {
@@ -69,7 +69,7 @@ export const HELP = [
   '💰 Money: send payment slips or tell me what you spent; /budget shows the month, /budget set 20000 sets a budget, /budget scan reads your email',
   '📌 Preferences: /prefs (e.g. /prefs add Always reply in Thai), kept across personalities and updates',
   '💾 Your data: /export (food, weight, health history, memories and settings as a .zip)',
-  '⚙️ Settings: /settings (AI model, thinking effort, voice translation), /stats, /status, /cleanup',
+  '⚙️ Settings: /settings (AI model, thinking effort, voice translation), /limit (daily spending caps in USD), /stats, /status, /cleanup',
   '💬 Chat: /reset (forget this conversation, keep memories), /id',
   '',
   'Try: "Remind me at 9pm to do my reviews", "Do I have time for the dentist tomorrow afternoon?", or "Draft an email to sarah@example.com about the Q4 deck".',
@@ -86,6 +86,48 @@ const LANGUAGES: [string, string][] = [
   ['ไทย', 'Thai'],
   ['日本語', 'Japanese'],
 ];
+
+const LIMIT_SCOPES: Record<string, LimitScope> = { gemini: 'gemini', g: 'gemini', claude: 'claude', c: 'claude', anthropic: 'claude', all: 'all', total: 'all', overall: 'all' };
+const SCOPE_NAMES: Record<LimitScope, string> = { gemini: 'Gemini', claude: 'Claude', all: 'All AI together' };
+const usd = (n: number | null) => (n === null ? 'off' : `$${n.toFixed(2)}`);
+
+/** Parses "$3", "2.5", "off". Returns null for off, undefined when not a valid amount. */
+function parseUsd(s: string | undefined): number | null | undefined {
+  if (!s) return undefined;
+  if (/^(off|none|no|0)$/i.test(s)) return null;
+  const v = Number(s.replace(/[$,]/g, ''));
+  return v > 0 && v <= 1000 ? Math.round(v * 100) / 100 : undefined;
+}
+
+/** The daily spending limits, with buttons for common caps. */
+export function limitsView(ctx: CommandContext, notice = ''): CommandReply {
+  const { agent, store } = ctx;
+  const l = agent.limits();
+  const mark = (scope: LimitScope, key: 'warnUsd' | 'capUsd') => (l[scope].from[key] === 'chat' ? '✏️' : '');
+  const line = (scope: LimitScope) =>
+    `${SCOPE_NAMES[scope]}: spent $${agent.spentToday(scope === 'all' ? undefined : scope).toFixed(4)} today · warn ${usd(l[scope].warnUsd)}${mark(scope, 'warnUsd')} · cap ${usd(l[scope].capUsd)}${mark(scope, 'capUsd')}`;
+  const text = [
+    notice,
+    '💵 Daily AI spending limits (USD, reset at midnight)',
+    line('gemini'),
+    line('claude'),
+    line('all'),
+    store.settings().limits ? '✏️ = set here in chat; the rest come from the .env file.' : 'All values come from the .env file.',
+    '',
+    'At the cap, that AI pauses until midnight. At the warning, I add a one-time note to a reply.',
+    'Change: /limit gemini 3 (cap) · /limit claude warn 1 · /limit all 5 · /limit gemini off · /limit reset (back to .env)',
+  ]
+    .filter((x, i) => x !== '' || i > 1)
+    .join('\n');
+  const capRow = (scope: 'gemini' | 'claude', amounts: number[]) => [
+    ...amounts.map((a) => ({ label: `${l[scope].capUsd === a ? '✅ ' : ''}${SCOPE_NAMES[scope]} $${a}`, command: `/limit ${scope} ${a}` })),
+    { label: `${l[scope].capUsd === null ? '✅ ' : ''}No cap`, command: `/limit ${scope} cap off` },
+  ];
+  return {
+    text,
+    buttons: [capRow('gemini', [1, 2, 5]), capRow('claude', [1, 3, 5]), [{ label: '↩️ Use .env values', command: '/limit reset' }]],
+  };
+}
 
 export function settingsView(ctx: CommandContext, notice = ''): CommandReply {
   const { agent, store, cfg } = ctx;
@@ -104,6 +146,7 @@ export function settingsView(ctx: CommandContext, notice = ''): CommandReply {
     `Spoken replies: ${voiceMode === 'off' ? 'off' : voiceMode === 'always' ? 'always' : 'when you send a voice note'}`,
     `Weather city: ${s.city?.name ?? cfg.weather.defaultCity}`,
     `News topics: ${(s.newsTopics ?? cfg.news.defaultTopics).join(', ') || 'none'}`,
+    `Daily caps: Gemini ${usd(agent.limits().gemini.capUsd)}, Claude ${usd(agent.limits().claude.capUsd)}, all ${usd(agent.limits().all.capUsd)} (/limit)`,
     '',
     'Tap to change. Models need their API key: Gemini GEMINI_API_KEY, Claude ANTHROPIC_API_KEY.',
   ]
@@ -117,6 +160,7 @@ export function settingsView(ctx: CommandContext, notice = ''): CommandReply {
       EFFORTS.map((e) => ({ label: mark(e === agent.effort, `🧠 ${e}`), command: `/effort ${e}` })),
       LANGUAGES.map(([label, lang]) => ({ label: mark(lang === translateTo, `🎙️→${label}`), command: `/translate ${lang}` })),
       VOICE_MODES.map(([label, mode]) => ({ label: mark(mode === voiceMode, label), command: `/voice ${mode}` })),
+      [{ label: '💵 Daily spending limits', command: '/limit' }],
     ],
   };
 }
@@ -236,6 +280,38 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         return settingsView(ctx, `✅ Voice notes will be translated into ${arg}.\n`);
       }
 
+      case '/limit':
+      case '/limits':
+      case '/cap': {
+        const [first = '', second, third] = arg.toLowerCase().split(/\s+/).filter(Boolean);
+        const limits = { ...(store.settings().limits ?? {}) };
+        if (!first) return limitsView(ctx);
+        if (first === 'reset') {
+          store.updateSettings({ limits: undefined });
+          return limitsView(ctx, '✅ Back to the limits in the .env file.\n');
+        }
+        const scope = LIMIT_SCOPES[first];
+        if (!scope) return limitsView(ctx, `"${first}" isn't gemini, claude or all.\n`);
+        const name = SCOPE_NAMES[scope];
+        const set = (patch: { warnUsd?: number | null; capUsd?: number | null }, msg: string) => {
+          store.updateSettings({ limits: { ...limits, [scope]: { ...(limits[scope] ?? {}), ...patch } } });
+          const l = agent.limits()[scope];
+          const note = l.warnUsd !== null && l.capUsd !== null && l.warnUsd >= l.capUsd ? ` (the warning ${usd(l.warnUsd)} is not below the cap, so it won't show)` : '';
+          return limitsView(ctx, `✅ ${msg}${note}\n`);
+        };
+        if (!second) return limitsView(ctx);
+        if (second === 'reset') {
+          delete limits[scope];
+          store.updateSettings({ limits: Object.keys(limits).length ? limits : undefined });
+          return limitsView(ctx, `✅ ${name} is back to the .env values.\n`);
+        }
+        if (second === 'off' && !third) return set({ warnUsd: null, capUsd: null }, `${name}: no warning and no cap.`);
+        const kind = second === 'warn' || second === 'warning' ? 'warnUsd' : second === 'cap' || second === 'limit' ? 'capUsd' : null;
+        const amount = parseUsd(kind ? third : second);
+        if (amount === undefined) return limitsView(ctx, 'Give an amount in USD from 0.01 to 1000, or "off", e.g. /limit gemini 3\n');
+        if (kind === 'warnUsd') return set({ warnUsd: amount }, `${name} warning: ${usd(amount)} a day.`);
+        return set({ capUsd: amount }, `${name} cap: ${usd(amount)} a day.`);
+      }
       case '/export': {
         const exp = buildExport(store, agent.health.db, chatKey, cfg.timezone, now);
         // Also keep a copy on the NAS (data/backups), for chats that can't receive files directly.

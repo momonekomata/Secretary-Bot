@@ -69,3 +69,51 @@ describe('separate daily caps per provider', () => {
     expect(usageStats(store.usage(), 'Asia/Bangkok', NOW)).toContain('Today: $1.7500 (2 calls) · Gemini $0.2500, Claude $1.5000');
   });
 });
+
+describe('/limit: daily limits changed in chat', () => {
+  async function ctxFor() {
+    const { runCommand } = await import('../commands');
+    const s = setup({ gemini: { warnUsd: null, capUsd: 5 } });
+    const briefings = new Briefings(s.cfg, s.store, s.agent, () => NOW);
+    const ctx = { chatKey: 'c', userId: '1', agent: s.agent, store: s.store, cfg: s.cfg, briefings, status: async () => '', now: () => NOW };
+    return { ...s, ctx, run: (t: string) => runCommand(t, ctx) };
+  }
+
+  it('shows the limits with their source, and overrides .env until reset', async () => {
+    const { run, agent, store } = await ctxFor();
+    const view = (await run('/limit'))!;
+    expect(view.text).toContain('Gemini: spent $0.0000 today · warn off · cap $5.00');
+    expect(view.text).toContain('All values come from the .env file.');
+    expect(view.buttons!.flat().map((b) => b.command)).toContain('/limit gemini 2');
+
+    expect((await run('/limit gemini 1'))!.text).toMatch(/^✅ Gemini cap: \$1\.00 a day\./);
+    expect((await run('/limit gemini'))!.text).toContain('cap $1.00✏️');
+    expect(await agent.reply({ chatKey: 'c', text: 'hi' })).toBe('from gemini');
+    expect(await agent.reply({ chatKey: 'c', text: 'again' })).toMatch(/^🛑 Gemini's daily cap reached: \$1\.0000 of \$1\.00\.[\s\S]*Change the limit with \/limit\.$/);
+
+    // Raise it in chat and carry on, the same day.
+    await run('/limit gemini $3');
+    expect(await agent.reply({ chatKey: 'c', text: 'more' })).toBe('from gemini');
+
+    await run('/limit claude warn 0.5');
+    await run('/limit all 10');
+    expect(store.settings().limits).toEqual({ gemini: { capUsd: 3 }, claude: { warnUsd: 0.5 }, all: { capUsd: 10 } });
+    expect(agent.limits().claude).toMatchObject({ warnUsd: 0.5, capUsd: null });
+
+    await run('/limit gemini off');
+    expect(agent.limits().gemini).toMatchObject({ warnUsd: null, capUsd: null });
+    await run('/limit gemini reset');
+    expect(agent.limits().gemini).toMatchObject({ capUsd: 5, from: { capUsd: 'env' } });
+    expect((await run('/limit reset'))!.text).toMatch(/^✅ Back to the limits in the \.env file\./);
+    expect(store.settings().limits).toBeUndefined();
+  });
+
+  it('rejects bad amounts and scopes, and notes a warning above the cap', async () => {
+    const { run, store } = await ctxFor();
+    expect((await run('/limit gemini lots'))!.text).toMatch(/^Give an amount in USD/);
+    expect((await run('/limit gemini 5000'))!.text).toMatch(/^Give an amount in USD/);
+    expect((await run('/limit openai 3'))!.text).toMatch(/^"openai" isn't gemini, claude or all\./);
+    expect(store.settings().limits).toBeUndefined();
+    expect((await run('/limit gemini warn 9'))!.text).toContain("the warning $9.00 is not below the cap, so it won't show");
+  });
+});
