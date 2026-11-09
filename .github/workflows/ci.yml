@@ -1,7 +1,8 @@
 name: CI
 on:
-  push:
   pull_request:
+  push:
+    branches-ignore: [main] # main is checked by the Docker workflow
 jobs:
   test:
     runs-on: ubuntu-latest

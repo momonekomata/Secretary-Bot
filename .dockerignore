@@ -1,4 +1,7 @@
 .git
+.github
 node_modules
 data
 .env
+credentials.json
+token.json

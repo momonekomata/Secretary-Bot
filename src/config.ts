@@ -1,34 +1,53 @@
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
-// Load .env when present (Node 20.12+ / 21.7+). Real env vars win.
-if (existsSync('.env')) process.loadEnvFile('.env');
+// Load .env from the project folder, then from the data folder (handy on a NAS, where the data
+// folder is the mounted volume). Variables already set in the environment win.
+const dataDirEnv = process.env.BOT_DATA_DIR ?? './data';
+for (const file of ['.env', join(dataDirEnv, '.env')]) {
+  if (existsSync(file)) process.loadEnvFile(file);
+}
 
-function list(name: string): string[] {
-  return (process.env[name] ?? '')
+function list(name: string, fallback = ''): string[] {
+  return (process.env[name] ?? fallback)
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
 }
 
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
-export type Effort = (typeof EFFORTS)[number];
-
-function effort(): Effort {
-  const v = (process.env.BOT_EFFORT ?? 'medium') as Effort;
-  return EFFORTS.includes(v) ? v : 'medium';
+function num(name: string): number | null {
+  const v = process.env[name];
+  if (v === undefined || v.trim() === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
+export const EFFORTS = ['low', 'medium', 'high'] as const;
+export type Effort = (typeof EFFORTS)[number];
+
+const geminiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '';
+const anthropicKey = process.env.ANTHROPIC_API_KEY ?? '';
+
 export const config = {
-  model: process.env.BOT_MODEL ?? 'claude-opus-5-5',
-  effort: effort(),
+  geminiKey,
+  anthropicKey,
+  /** Starting model; change it at runtime with /settings. Gemini is the default when its key is set. */
+  defaultModel: process.env.BOT_MODEL ?? (geminiKey || !anthropicKey ? 'gemini-3.8-flash' : 'claude-opus-5-5'),
+  defaultEffort: (EFFORTS as readonly string[]).includes(process.env.BOT_EFFORT ?? '') ? (process.env.BOT_EFFORT as Effort) : 'medium',
+  /** Gemini model used to transcribe voice notes, whatever chat model is selected. */
+  voiceModel: process.env.VOICE_MODEL ?? 'gemini-3.8-flash',
+  defaultTranslateTo: process.env.VOICE_TRANSLATE_TO ?? 'English',
+
   botName: process.env.BOT_NAME ?? 'Tabi',
-  timezone: process.env.BOT_TIMEZONE ?? 'Asia/Bangkok',
+  timezone: process.env.BOT_TIMEZONE ?? process.env.TZ ?? 'Asia/Bangkok',
   persona: process.env.BOT_PERSONA ?? '',
-  dataDir: process.env.BOT_DATA_DIR ?? './data',
+  dataDir: dataDirEnv,
   port: Number(process.env.PORT ?? 8787),
   /** Messages (user + assistant) kept per chat for context. */
   historyLimit: Number(process.env.BOT_HISTORY_LIMIT ?? 40),
   webTools: (process.env.BOT_WEB_TOOLS ?? 'on') !== 'off',
+  version: process.env.BOT_VERSION ?? 'dev',
+  announceStartup: (process.env.BOT_ANNOUNCE_STARTUP ?? 'on') !== 'off',
 
   telegram: {
     token: process.env.TELEGRAM_BOT_TOKEN ?? '',
@@ -42,11 +61,43 @@ export const config = {
     accessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN ?? '',
     allowedUsers: list('LINE_ALLOWED_USERS'),
   },
+
+  /** Chats that receive scheduled messages (briefings, weather, alerts), e.g. "telegram:12345,line:Uabc". */
+  notifyChats: list('BOT_NOTIFY_CHATS', process.env.BOT_DAILY_NUDGE_CHATS ?? ''),
+  schedule: {
+    /** Local times (HH:MM in BOT_TIMEZONE). Empty disables a job. */
+    briefing: process.env.BRIEFING_TIME ?? '08:00',
+    weather: process.env.WEATHER_TIME ?? '07:00',
+    weekend: process.env.WEEKEND_PLANNER_TIME ?? '16:00',
+    /** Day for the weekend planner: sun, mon, ... sat. */
+    weekendDay: (process.env.WEEKEND_PLANNER_DAY ?? 'fri').toLowerCase(),
+    cleanup: process.env.CLEANUP_TIME ?? '03:00',
+    /** Legacy WaniKani nudge hour (0-23). */
+    nudgeHour: process.env.BOT_DAILY_NUDGE_HOUR ?? '',
+  },
+
+  billing: {
+    /** Daily spend (USD) that triggers a warning, and the hard cap that pauses AI until midnight. */
+    warnUsd: num('DAILY_WARNING_LIMIT_USD'),
+    capUsd: num('DAILY_HARD_LIMIT_USD'),
+    /** Days of usage log kept before the nightly cleanup archives them. */
+    retentionDays: num('LOG_RETENTION_DAYS') ?? 30,
+    /** Optional JSON price overrides, USD per 1M tokens: {"model-id":{"input":1,"output":2}} */
+    priceOverrides: process.env.MODEL_PRICES ?? '',
+  },
+
+  news: {
+    language: process.env.NEWS_LANGUAGE ?? 'en-US',
+    country: process.env.NEWS_COUNTRY ?? 'US',
+    defaultTopics: list('NEWS_TOPICS', 'Artificial Intelligence,Global Economy,Thailand'),
+  },
+  weather: {
+    defaultCity: process.env.WEATHER_CITY ?? 'Bangkok',
+    /** Push an alert when US AQI goes above this (empty disables). */
+    aqiAlert: num('AQI_ALERT_THRESHOLD'),
+  },
+
   wanikaniToken: process.env.WANIKANI_TOKEN ?? '',
-  /** Hour (0-23, BOT_TIMEZONE) for the daily study nudge; empty disables it. */
-  dailyNudgeHour: process.env.BOT_DAILY_NUDGE_HOUR ?? '',
-  /** Chats that get the daily nudge, e.g. "telegram:12345,line:Uabc...". */
-  dailyNudgeChats: list('BOT_DAILY_NUDGE_CHATS'),
 };
 
 export type Config = typeof config;

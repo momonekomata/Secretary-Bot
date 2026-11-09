@@ -1,11 +1,13 @@
 {
   "name": "secretary-bot",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "description": "Personal Claude agent for Telegram and LINE",
+  "description": "Personal AI secretary and news curator for Telegram and LINE, powered by Gemini or Claude",
   "scripts": {
     "setup": "node scripts/setup.mjs",
+    "google-auth": "tsx scripts/google-auth.ts",
+    "setup-gcp": "bash scripts/setup-gcp.sh",
     "start": "tsx src/main.ts",
     "dev": "tsx watch src/main.ts",
     "typecheck": "tsc --noEmit",
@@ -16,6 +18,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
+    "@google/genai": "^3.0.0",
     "tsx": "^4.23.15"
   },
   "devDependencies": {

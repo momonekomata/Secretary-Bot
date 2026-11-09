@@ -1,22 +1,76 @@
 import { createServer, type IncomingMessage } from 'node:http';
-import { Agent, anthropicCreate } from './agent';
-import { Channels } from './channel';
+import { GoogleGenAI } from '@google/genai';
+import { Agent, type Providers } from './agent';
+import { Briefings } from './briefings';
+import { Channels, Secretary } from './channel';
 import { config } from './config';
+import { Google } from './google';
+import { anthropicCreate, ClaudeProvider } from './llm/claude';
+import { GeminiProvider, type GenerateContent } from './llm/gemini';
 import { Line, verifyLineSignature } from './line';
+import { modelInfo } from './models';
 import { Scheduler } from './scheduler';
 import { Store } from './store';
 import { Telegram } from './telegram';
 
 const store = new Store(config.dataDir);
-const agent = new Agent(config, store, anthropicCreate());
-const channels = new Channels();
 
-if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-  console.warn('ANTHROPIC_API_KEY is not set; Claude calls will fail unless an `ant auth login` profile exists.');
+const gemini = config.geminiKey ? new GoogleGenAI({ apiKey: config.geminiKey }) : null;
+const geminiGenerate: GenerateContent | null = gemini ? (p) => gemini.models.generateContent(p) : null;
+const providers: Providers = {
+  ...(geminiGenerate ? { gemini: new GeminiProvider(geminiGenerate) } : {}),
+  ...(config.anthropicKey || process.env.ANTHROPIC_AUTH_TOKEN ? { claude: new ClaudeProvider(anthropicCreate()) } : {}),
+};
+if (!Object.keys(providers).length) console.warn('No AI key set: add GEMINI_API_KEY and/or ANTHROPIC_API_KEY (run `npm run setup`).');
+
+let google: Google | null = null;
+try {
+  google = Google.load(config.dataDir);
+} catch (e) {
+  console.warn('Google not loaded:', (e as Error).message);
 }
 
-const telegram = config.telegram.token ? new Telegram(config.telegram, agent) : null;
-const line = config.line.channelSecret && config.line.accessToken ? new Line(config.line, agent) : null;
+const agent = new Agent(config, store, providers, google);
+const briefings = new Briefings(config, store, agent);
+
+/** /status: what is configured and whether it works. */
+async function status(): Promise<string> {
+  const lines = [`🩺 ${config.botName} status (version ${config.version})`];
+  const model = modelInfo(agent.model);
+  lines.push(`AI model: ${model.label} (${model.id})${agent.hasProvider(model.provider) ? '' : ' ⚠️ its API key is missing'}`);
+  lines.push(`Gemini key: ${config.geminiKey ? '✅' : '❌ not set (needed for Gemini models and voice notes)'}`);
+  lines.push(`Claude key: ${providers.claude ? '✅' : '— not set (optional)'}`);
+  if (gemini && model.provider === 'gemini') {
+    try {
+      await gemini.models.get({ model: model.id });
+      lines.push(`Gemini model ${model.id}: ✅ available`);
+    } catch (e) {
+      lines.push(`Gemini model ${model.id}: ❌ ${(e as Error).message.slice(0, 120)}`);
+    }
+  }
+  if (google) {
+    try {
+      await google.check();
+      lines.push('Google (Calendar, Gmail, Tasks, Drive): ✅ signed in');
+    } catch (e) {
+      lines.push(`Google: ❌ ${(e as Error).message}`);
+    }
+  } else lines.push('Google: — not connected (run `npm run google-auth`)');
+  lines.push(`Telegram: ${config.telegram.token ? `✅ ${config.telegram.mode}` : '— off'}  LINE: ${config.line.accessToken ? '✅' : '— off'}`);
+  lines.push(`WaniKani: ${config.wanikaniToken ? '✅' : '— off'}`);
+  lines.push(
+    `Scheduled messages go to: ${config.notifyChats.join(', ') || '⚠️ nobody (set BOT_NOTIFY_CHATS to your chat from /id)'}`,
+    `Weather ${config.schedule.weather || 'off'}, briefing ${config.schedule.briefing || 'off'}, weekend planner ${config.schedule.weekendDay} ${config.schedule.weekend || 'off'}, cleanup ${config.schedule.cleanup || 'off'} (${config.timezone})`,
+  );
+  const b = config.billing;
+  lines.push(`Spending today: $${agent.spentToday().toFixed(4)}${b.warnUsd !== null ? `, warn at $${b.warnUsd}` : ''}${b.capUsd !== null ? `, cap $${b.capUsd}` : ''}`);
+  return lines.join('\n');
+}
+
+const secretary = new Secretary(config, store, agent, briefings, geminiGenerate, status);
+const channels = new Channels();
+const telegram = config.telegram.token ? new Telegram(config.telegram, secretary) : null;
+const line = config.line.channelSecret && config.line.accessToken ? new Line(config.line, secretary) : null;
 if (telegram) channels.add(telegram);
 if (line) channels.add(line);
 if (!telegram && !line) console.warn('Neither Telegram nor LINE is configured. See README.md.');
@@ -72,8 +126,9 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(config.port, () => {
-  console.log(`${config.botName} listening on :${config.port} (model ${config.model}, effort ${config.effort})`);
-  if (line) console.log(`LINE webhook path: POST /line`);
+  const m = modelInfo(agent.model);
+  console.log(`${config.botName} ${config.version} listening on :${config.port} (model ${m.id}, effort ${agent.effort}, Google ${google ? 'on' : 'off'})`);
+  if (line) console.log('LINE webhook path: POST /line');
 });
 
 if (telegram) {
@@ -81,8 +136,19 @@ if (telegram) {
   else if (process.env.TELEGRAM_WEBHOOK_URL) void telegram.setWebhook(process.env.TELEGRAM_WEBHOOK_URL).catch((e) => console.error(e));
 }
 
-const scheduler = new Scheduler(config, store, channels);
+const scheduler = new Scheduler(config, store, channels, briefings);
 scheduler.start();
+
+// Tell the owner a new version is running (e.g. after Watchtower updated the container).
+if (config.announceStartup && config.version !== 'dev') {
+  const lastVersion = store.ranOn('startup-version');
+  if (lastVersion !== config.version) {
+    store.markRan('startup-version', config.version);
+    for (const chat of config.notifyChats) {
+      void channels.send(chat, `✅ ${config.botName} updated and running (version ${config.version}).`).catch(() => undefined);
+    }
+  }
+}
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {

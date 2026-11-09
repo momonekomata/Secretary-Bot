@@ -1,14 +1,18 @@
 # Beginner setup guide (step by step)
 
-This guide assumes you have never run a program like this before. Go slowly and do one step at a time.
-Start with **Telegram**: it is the easiest. Add LINE later if you want it (Part 2).
+This guide assumes you have never run a program like this before. Go slowly and do one part at a time.
 
-**What it costs:** Telegram and LINE are free. Claude is pay-as-you-go: you buy credits (from about US$5) and each message
-uses a little. You can see your usage at any time on the Claude website.
+1. **Part 1 — Telegram** on your computer (about 20 minutes). Start here.
+2. **Part 2 — Morning briefings** and alerts (5 minutes).
+3. **Part 3 — Connect Google** Calendar, Gmail, Tasks and Drive (about 20 minutes).
+4. **Part 4 — Run it 24/7 on your NAS** with Docker, with automatic updates.
+5. **Part 5 — LINE** (optional).
+
+**What it costs:** Telegram and LINE are free. Gemini has a free tier for Gemini 3.8 Flash; past that, and for Gemini 4 Argon and
+Claude, you pay per use. The bot tracks its own spending (`/stats`) and can warn you and pause itself at a daily limit.
 
 **Words you'll see:**
 - **Terminal**: a window where you type commands instead of clicking. You type a command, press **Enter**, and it runs.
-- **Folder path**: where a folder is on your computer.
 - **Token / key**: a long password-like code that lets the bot use a service. Treat each one like a password: never post it anywhere.
 
 ---
@@ -35,12 +39,12 @@ uses a little. You can see your usage at any time on the Claude website.
 2. Unzip it. **Windows:** right-click the ZIP → **Extract All** → **Extract**. **Mac:** double-click it.
 3. You now have a folder named **`Secretary-Bot-main`**. Move it somewhere easy, such as **Documents**. This is the bot's folder.
 
-### Step 3. Get your Claude API key
+### Step 3. Get your Gemini API key
 
-1. Go to **https://platform.claude.com** and sign up or log in.
-2. Open **Billing** (in Settings) and buy credits. US$5 is plenty to start.
-3. Open **API keys** → **Create key**. Give it a name, such as `my bot`.
-4. **Copy the key now** (it starts with `sk-ant-`) and paste it into a note for a moment. The site shows it only once.
+1. Go to **https://aistudio.google.com/apikey** and sign in with your Google account.
+2. Click **Create API key** and copy the key into a note.
+3. *(Optional)* To also use **Claude**: sign up at **https://platform.claude.com**, add credits under **Billing**,
+   then **API keys** → **Create key**, and copy it (it starts with `sk-ant-`). You can add this later.
 
 ### Step 4. Create your Telegram bot
 
@@ -62,11 +66,10 @@ Check you're in the right place: type `npm run` and press Enter. You should see 
 
 ### Step 6. Install the bot's parts
 
-Type this and press **Enter**. It downloads what the bot needs, and can take a minute:
 ```
 npm install
 ```
-Warnings in yellow are normal. Wait until you can type again.
+It downloads what the bot needs and can take a minute. Warnings in yellow are normal. Wait until you can type again.
 
 ### Step 7. Enter your keys
 
@@ -75,15 +78,18 @@ npm run setup
 ```
 It asks a few questions. Paste the answer to each and press **Enter**.
 (To paste in a terminal: **Windows** right-click, or Ctrl+V. **Mac** ⌘ Command+V.)
+Press **Enter** alone to accept the value shown in `[brackets]`.
 
 | Question | What to type |
 |---|---|
-| Claude API key | your `sk-ant-...` key |
-| Bot name | press Enter to keep `Tabi`, or type a name |
-| Your time zone | press Enter to keep `Asia/Bangkok`, or type yours, e.g. `Asia/Tokyo` |
+| Gemini API key | your key from Step 3 |
+| Claude API key | your `sk-ant-...` key, or press Enter to skip |
+| Bot name, time zone, city | press Enter to keep `Tabi`, `Asia/Bangkok`, `Bangkok`, or type your own |
 | Telegram bot token | the token from BotFather |
 | Your Telegram user id | **press Enter**: you don't know it yet, the bot will tell you |
 | LINE channel secret | **press Enter** to skip for now |
+| Chat for morning briefings | **press Enter** for now (Part 2) |
+| Daily spend warning / hard cap | press Enter to keep $0.50 and $1.50, or type your own |
 | WaniKani API token | paste it if you have one (wanikani.com → Settings → API Tokens), or press Enter |
 
 ### Step 8. Start the bot and get your user id
@@ -105,79 +111,154 @@ In Telegram, search for your bot's username, open it, and press **Start**. It re
 
 ### Step 10. Try it 🎉
 
-Send your bot messages like:
-- `สวัสดี! Teach me 3 Japanese words about food`
-- `Remember that my JLPT N4 exam is on 6 December`
-- `Remind me in 10 minutes to drink water`
+- `/help` shows everything it can do. Tap the **/** button in Telegram for the command menu.
+- `/settings` lets you switch between Gemini and Claude, and set how hard it thinks, with buttons.
+- `/news` gives you a news briefing; `/weather` today's weather and air quality; `/weekend` a weekend planner.
+- `/add Call the dentist` and `/todo` manage a to-do list.
+- Hold the 🎤 button and **send a voice note** (in Thai, English or Japanese): it transcribes it, translates it, summarises it,
+  and creates any to-dos or reminders you mention.
 - Send a photo of Japanese text and ask "what does this say?"
-- `How many WaniKani reviews do I have?` (if you added a WaniKani token)
+- `Remind me in 10 minutes to drink water`
 
 **Each time you want to use the bot later:** open a terminal in the `Secretary-Bot-main` folder (Step 5) and run `npm start`.
+To keep it running all the time, see Part 4.
 
 ---
 
-## Part 2 — LINE (optional, harder, about 30 minutes)
+## Part 2 — Morning briefings and alerts (5 minutes)
 
-LINE sends messages to the bot over the internet, so your bot needs a public web address. For testing, a free tool called
+The bot can message you on its own: weather at **07:00**, a full morning briefing at **08:00** (weather, calendar, unread email,
+tasks, news, WaniKani), a weekend planner on **Fridays at 16:00**, and spending and air-quality alerts.
+
+1. In Telegram, send `/id` to your bot. It shows **This chat: telegram:123456789**. Copy that `telegram:…` text.
+2. Stop the bot (**Ctrl + C**), run `npm run setup`, and paste it at **Chat for morning briefings**. Start the bot again.
+3. Choose your news: `/topics` shows the list, `/addtopic Renewable Energy` adds one, `/removetopic 2` removes the second.
+4. Set your city: `/setcity Chiang Mai`.
+5. Try them now without waiting: `/brief`, `/weather`, `/weekend`.
+
+Change the times in `.env` (`WEATHER_TIME`, `BRIEFING_TIME`, `WEEKEND_PLANNER_TIME`; leave one empty to turn it off).
+`/status` shows what's connected and when each message is scheduled.
+
+---
+
+## Part 3 — Connect Google (Calendar, Gmail, Tasks, Drive)
+
+This lets the bot read your calendar, unread email, Google Tasks and Drive, add calendar events and tasks, and write **email drafts**.
+It never sends email itself; drafts wait in Gmail for you to check and send.
+
+### Step 11. Create a Google Cloud project
+
+1. Go to **https://console.cloud.google.com** and sign in. Accept the terms if asked.
+2. At the top, click the project picker → **New project**. Name it `Secretary Bot` → **Create**. Make sure it is selected at the top.
+3. Turn on the four APIs. Open each link below, check that your project is selected, and click **Enable**:
+   - https://console.cloud.google.com/apis/library/calendar-json.googleapis.com
+   - https://console.cloud.google.com/apis/library/gmail.googleapis.com
+   - https://console.cloud.google.com/apis/library/tasks.googleapis.com
+   - https://console.cloud.google.com/apis/library/drive.googleapis.com
+
+   *(If you have the `gcloud` tool installed, `npm run setup-gcp` does this step for you.)*
+
+### Step 12. Set up the sign-in screen
+
+Google renames these pages from time to time; look for the closest match.
+
+1. Open **https://console.cloud.google.com/auth/overview** → **Get started**.
+2. App name `Secretary Bot`, your email for support → **Next**. Audience: **External** → **Next**. Your email again → **Next** → agree → **Create**.
+3. Go to **Audience** → **Test users** → **Add users** → add your own Gmail address → **Save**.
+4. Still on **Audience**, click **Publish app** → **Confirm** (status becomes **In production**).
+   Your app stays unverified, which is fine for personal use. Without this step, Google signs the bot out every 7 days.
+
+### Step 13. Download the client file
+
+1. Open **https://console.cloud.google.com/auth/clients** → **Create client**.
+2. Application type: **Desktop app**. Name: `Secretary Bot` → **Create**.
+3. Click **Download JSON**. Rename the file to **`credentials.json`**.
+4. In the `Secretary-Bot-main` folder, open the **`data`** folder (it was created when you first ran the bot) and put `credentials.json` inside.
+
+### Step 14. Sign in
+
+1. Stop the bot (**Ctrl + C**) and run:
+   ```
+   npm run google-auth
+   ```
+2. It prints a long link. Open it in your browser and sign in with the Gmail address you added as a test user.
+3. Google warns **"Google hasn't verified this app"**: click **Advanced** → **Go to Secretary Bot (unsafe)**. It's your own app.
+4. Tick all the permissions and click **Continue**. The terminal says **✅ Google connected**.
+   (If the browser instead shows "This site can't be reached", copy the whole address from the address bar, paste it into the terminal, and press Enter.)
+5. Start the bot again with `npm start`.
+
+Try `/calendar`, `/inbox`, `/gtask`, or just ask: *"Do I have time for a dentist appointment tomorrow afternoon?"* or
+*"Draft an email to sarah@example.com about the Q4 deck."* Voice notes like *"add a meeting with Ken on Friday at 3"* now go
+straight into Google Calendar and Google Tasks.
+
+---
+
+## Part 4 — Run it 24/7 on your NAS (Docker)
+
+On the NAS the bot runs as a **Docker container**. A second container, **Watchtower**, updates it automatically whenever new code
+reaches GitHub: each push to the `main` branch builds a new image (GitHub Actions), and Watchtower installs it within about 5 minutes.
+The bot then messages you "✅ updated and running".
+
+### Step 15. Prepare on your computer
+
+Do Parts 1–3 on your computer first, so that the `data` folder holds your `.env` (written by `npm run setup`), `credentials.json`
+and `token.json`. Stop the bot on your computer afterwards: only one copy should run at a time.
+
+### Step 16. Make the image downloadable (once)
+
+GitHub publishes the image after code reaches the `main` branch. The first time, it's private. Make it public (it contains no keys):
+on GitHub open your profile → **Packages** → **secretary-bot** → **Package settings** → **Change visibility** → **Public**.
+
+### Step 17. Set up the folder on the NAS
+
+1. On the NAS (e.g. Synology **File Station**), create a folder such as `docker/secretary-bot`.
+2. Upload **`docker-compose.yml`** (from the `Secretary-Bot-main` folder) into it.
+3. Create a folder **`data`** inside it and upload your **`.env`**, **`credentials.json`** and **`token.json`** into `data`.
+   (`.env` is a hidden file on Mac: in Finder press **⌘ Shift .** to show it.)
+4. If your time zone isn't Bangkok, open `docker-compose.yml` and change both `TZ=Asia/Bangkok` lines.
+
+### Step 18. Start it
+
+- **Synology:** open **Container Manager** → **Project** → **Create**. Name `secretary-bot`, path: the `docker/secretary-bot` folder.
+  It finds `docker-compose.yml` → **Next** → **Done**. Both containers start.
+- **Other NAS (QNAP, Unraid, Portainer) or SSH:** in that folder run `docker compose up -d`.
+
+Send `/status` to your bot from Telegram to check everything is connected. The containers restart by themselves if the NAS reboots.
+
+---
+
+## Part 5 — LINE (optional, harder)
+
+LINE sends messages to the bot over the internet, so the bot needs a public web address. For testing, a free tool called
 **cloudflared** gives your computer a temporary one.
 
-> I couldn't check LINE's website while writing this, and LINE renames its buttons from time to time.
-> If a button below has a slightly different name, look for the closest match.
+> LINE renames its buttons from time to time. If a button below has a slightly different name, look for the closest match.
 
-### Step 11. Create a LINE Official Account with the Messaging API
+### Step 19. Create a LINE Official Account with the Messaging API
 
 1. Go to **https://developers.line.biz/console/** and log in with your LINE account.
 2. Create a **Provider** (any name, e.g. your own name).
-3. Create a **LINE Official Account** for the bot. LINE now does this in **LINE Official Account Manager**
-   (the console links you there). Fill in the account name and category.
+3. Create a **LINE Official Account** for the bot. LINE does this in **LINE Official Account Manager** (the console links you there).
 4. In **LINE Official Account Manager**, open **Settings** → **Messaging API** → **Enable Messaging API**, and pick the provider you made.
-5. Turn off LINE's own automatic answers: in Official Account Manager open **Response settings** (or **Settings → Response**)
-   and turn **Auto-response messages** (also called auto-reply) **off** and **Webhook** **on**.
+5. In Official Account Manager open **Response settings** and turn **Auto-response messages** **off** and **Webhook** **on**.
 
-### Step 12. Copy the two LINE keys
+### Step 20. Copy the two LINE keys
 
 Back in the **LINE Developers console**, open your provider → your channel:
 - **Basic settings** tab → copy **Channel secret**.
-- **Messaging API** tab → scroll to **Channel access token (long-lived)** → **Issue** → copy it.
+- **Messaging API** tab → **Channel access token (long-lived)** → **Issue** → copy it.
 
-Stop the bot (**Ctrl + C**), run `npm run setup`, press Enter to keep the old answers, and paste these two when it asks.
-Leave **Your LINE user id** empty for now. Then run `npm start`.
+Stop the bot (**Ctrl + C**), run `npm run setup`, keep the old answers, and paste these two. Leave **Your LINE user id** empty. Run `npm start`.
 
-### Step 13. Give the bot a public address
+### Step 21. Give the bot a public address and connect LINE
 
-Open a **second** terminal window (keep the bot running in the first) and run:
-```
-npx cloudflared tunnel --url http://localhost:8787
-```
-After a few seconds it prints an address like `https://some-random-words.trycloudflare.com`. Copy it.
-Keep this window open too.
+1. Open a **second** terminal and run `npx cloudflared tunnel --url http://localhost:8787`. Copy the `https://….trycloudflare.com` address it prints.
+2. LINE Developers console → **Messaging API** tab → **Webhook URL** → **Edit** → paste the address with `/line` at the end → **Update** → **Verify** (should say Success) → turn on **Use webhook**.
+3. Scan the **QR code** on that page with LINE, add the bot as a friend, and send it a message. It replies with your LINE user id (starts with `U`).
+4. **Ctrl + C** in the first terminal, `npm run setup` (paste the id), `npm start`.
 
-### Step 14. Connect LINE to the bot
-
-1. LINE Developers console → your channel → **Messaging API** tab → **Webhook URL** → **Edit**.
-2. Paste your address and add `/line` at the end, for example:
-   `https://some-random-words.trycloudflare.com/line` → **Update**.
-3. Click **Verify**. It should say **Success**.
-4. Turn on **Use webhook**.
-
-### Step 15. Get your LINE user id and finish
-
-1. On the same **Messaging API** tab there is a **QR code**. Scan it with LINE on your phone and add the bot as a friend.
-2. Send it any message. It replies with your LINE user id (starts with `U`). Copy it.
-3. In the first terminal: **Ctrl + C**, `npm run setup` (paste the id at **Your LINE user id**), then `npm start`.
-
-Now the bot answers you in LINE too.
-
-**Note:** the cloudflared address changes every time you start it, so you'd need to repeat Step 14 each time.
-That's fine for trying it out. To have LINE work all the time, see Part 3.
-
----
-
-## Part 3 — Keeping it on all the time (later)
-
-The bot stops when you close the terminal or your computer sleeps. When you're happy with it, you can move it to a machine that's
-always on: an old laptop, a Raspberry Pi, or a small cloud server (a VPS, Fly.io, or Railway). `README.md` has the technical
-details (a Docker image is included). Ask for help when you get there; it's a separate project.
+The cloudflared address changes every time you start it. For LINE to work permanently on the NAS, the NAS needs a fixed public HTTPS
+address (for example a Cloudflare Tunnel with your own domain, or your NAS's reverse proxy) pointing at port 8787.
 
 ---
 
@@ -188,11 +269,16 @@ details (a Docker image is included). Ask for help when you get there; it's a se
 | `'node' is not recognized` / `command not found: node` | Node.js isn't installed, or the terminal was opened before installing. Restart the computer and try again. |
 | `npm ERR! enoent ... package.json` | The terminal isn't in the `Secretary-Bot-main` folder. Redo Step 5. |
 | Windows: `running scripts is disabled on this system` | You're in PowerShell. Use **Command Prompt** instead (type `cmd` in the folder's address bar). |
-| The bot doesn't answer in Telegram | Is the terminal still open and running `npm start`? Is your user id in setup? Send `/id` to check. |
-| Bot says "My Claude API key was rejected" | Run `npm run setup` and paste the key again (it starts with `sk-ant-`). |
-| Bot says it's "rate limited" or "Something went wrong" | Check you have credits left at platform.claude.com → Billing. Then look at the terminal for the error message. |
-| `Error: listen EADDRINUSE :8787` | The bot is already running in another window. Close the other window, or press Ctrl + C there. |
-| LINE **Verify** fails | Both terminals (bot and cloudflared) must be running, and the URL must end in `/line`. |
-| LINE answers with its own canned message | Turn off auto-response in Official Account Manager (Step 11.5). |
+| The bot doesn't answer in Telegram | Is the bot running? Is your user id in setup? Send `/id`, then `/status`. |
+| "My AI API key was rejected" | Run `npm run setup` and paste the key again. |
+| "The selected model … needs ANTHROPIC_API_KEY" | You picked a Claude model without a Claude key. Pick a Gemini model in `/settings`, or add the key. |
+| "Daily spending cap reached" | The bot paused itself to protect your wallet. It unlocks at midnight, or raise `DAILY_HARD_LIMIT_USD`. |
+| Voice notes: "need a Gemini API key" | Voice notes always use Gemini. Add `GEMINI_API_KEY` with `npm run setup`. |
+| "Google sign-in has expired" | Run `npm run google-auth` again (and make sure you did Step 12.4, Publish app). On the NAS, copy the new `token.json` into `data`. |
+| `/status` says a Gemini model isn't available | Google may have renamed it. Pick another model in `/settings`. |
+| `Error: listen EADDRINUSE :8787` | The bot is already running in another window. Close it, or press Ctrl + C there. |
+| NAS: `pull access denied` / `unauthorized` for ghcr.io | Do Step 16 (make the package public), or check the GitHub Actions run finished. |
+| NAS: briefings arrive at the wrong hour | Set `TZ` in `docker-compose.yml` and `BOT_TIMEZONE` in `.env` to your time zone. |
+| LINE **Verify** fails | Both the bot and cloudflared must be running, and the URL must end in `/line`. |
 
 If you're stuck, copy the red error text from the terminal (**without** any keys in it) and ask for help.
