@@ -14,6 +14,7 @@ import { localDay } from './time';
 import { weatherText } from './tools';
 import { formatDay as formatWatchDay } from './healthsync';
 import { buildExport } from './export';
+import { budgetAlerts, CATEGORY_KEYS, findCategory, report, scanEmail, scanSummary, txnLine } from './money';
 import { formatReport, healthImport, importFromDrive } from './samsungexport';
 import type { Store } from './store';
 import { geocode } from './weather';
@@ -49,7 +50,7 @@ export interface CommandContext {
 }
 
 /** Commands that call an AI or an outside API: channels show "typing…" while they run. */
-export const SLOW_COMMANDS = new Set(['/review', '/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say']);
+export const SLOW_COMMANDS = new Set(['/review', '/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say', '/budget', '/money']);
 
 export const HELP = [
   'Hi! I am your personal secretary and news curator. Just talk to me, send a photo, or send a voice note.',
@@ -65,6 +66,7 @@ export const HELP = [
   '🎬 Roleplay: /roleplay (scenes, stories, Japanese conversation practice), /roleplay end',
   '🌦️ Weather: /weather, /forecast (7 days), /weekend',
   '🎭 Personality: /persona (pick one or describe your own), /name <new name>, /ttsvoice <voice>',
+  '💰 Money: send payment slips or tell me what you spent; /budget shows the month, /budget set 20000 sets a budget, /budget scan reads your email',
   '📌 Preferences: /prefs (e.g. /prefs add Always reply in Thai), kept across personalities and updates',
   '💾 Your data: /export (food, weight, health history, memories and settings as a .zip)',
   '⚙️ Settings: /settings (AI model, thinking effort, voice translation), /stats, /status, /cleanup',
@@ -242,6 +244,80 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
           writeFileSync(join(cfg.dataDir, 'backups', exp.name), exp.data);
         }
         return { text: exp.summary, file: { name: exp.name, data: exp.data } };
+      }
+      case '/budget':
+      case '/money': {
+        const tz = cfg.timezone;
+        const [sub = '', ...rest] = arg.split(/\s+/).filter(Boolean);
+        const word = sub.toLowerCase();
+        const hasGmail = !!google?.has('gmail');
+        const view = (text: string): CommandReply => ({
+          text,
+          buttons: [
+            [
+              { label: '📅 Last month', command: '/budget last' },
+              { label: '🧾 Recent', command: '/budget list' },
+            ],
+            ...(hasGmail ? [[{ label: '📧 Check my email', command: '/budget scan' }]] : []),
+          ],
+        });
+        const usage = [
+          '💰 Budget and spending',
+          'Send me payment slips (several at once is fine) or tell me what you spent, e.g. "haircut 350".',
+          '/budget: this month · /budget last: last month · /budget list: recent transactions',
+          '/budget set 20000: monthly budget · /budget set food 6000: a category (0 removes it)',
+          '/budget start 25: the budget month starts on payday',
+          '/budget edit 12 food · /budget remove 12',
+          hasGmail ? '/budget scan: read receipts, card alerts, bills and salary from your email (/budget scan 90 for 90 days)' : '',
+          `Categories: ${CATEGORY_KEYS.join(', ')}`,
+        ]
+          .filter(Boolean)
+          .join('\n');
+        if (!word) return view(report(store, chatKey, now, tz));
+        if (word === 'last') return view(report(store, chatKey, now, tz, { back: 1 }));
+        if (word === 'list') {
+          const recent = [...store.money(chatKey)].sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 25);
+          return { text: recent.length ? `🧾 Recent transactions:\n${recent.map(txnLine).join('\n')}` : 'Nothing logged yet.' };
+        }
+        if (word === 'set') {
+          const amount = Number((rest[rest.length - 1] ?? '').replace(/[,฿]/g, ''));
+          if (!rest.length || !Number.isFinite(amount) || amount < 0) return { text: usage };
+          const what = rest.slice(0, -1).join(' ');
+          if (!what || /^(total|all|month|ทั้งหมด)$/i.test(what)) {
+            store.updateBudget(chatKey, { monthly: amount ? Math.round(amount) : undefined });
+          } else {
+            const key = findCategory(what);
+            if (!key) return { text: `I don't know the category "${what}".\nCategories: ${CATEGORY_KEYS.join(', ')}` };
+            const categories = { ...(store.budget(chatKey).categories ?? {}) };
+            if (amount) categories[key] = Math.round(amount);
+            else delete categories[key];
+            store.updateBudget(chatKey, { categories });
+          }
+          return view(`✅ Budget saved.\n\n${report(store, chatKey, now, tz)}`);
+        }
+        if (word === 'start') {
+          const day = Number(rest[0]);
+          if (!(day >= 1 && day <= 28)) return { text: 'Give a day from 1 to 28, e.g. /budget start 25' };
+          store.updateBudget(chatKey, { startDay: day === 1 ? undefined : day });
+          return view(`✅ Your budget month now starts on day ${day}.\n\n${report(store, chatKey, now, tz)}`);
+        }
+        if (word === 'remove' || word === 'delete') {
+          const t = store.removeMoney(chatKey, Number(rest[0]?.replace('#', '')));
+          return { text: t ? `🗑️ Removed ${txnLine(t)}` : `No transaction #${rest[0] ?? ''}. See /budget list.` };
+        }
+        if (word === 'edit') {
+          const key = findCategory(rest.slice(1).join(' '));
+          if (!key) return { text: `Usage: /budget edit 12 food\nCategories: ${CATEGORY_KEYS.join(', ')}` };
+          const t = store.updateMoney(chatKey, Number(rest[0]?.replace('#', '')), { category: key });
+          return { text: t ? `✅ ${txnLine(t)}` : `No transaction #${rest[0] ?? ''}. See /budget list.` };
+        }
+        if (word === 'scan') {
+          if (!google?.has('gmail')) return needGoogle();
+          const days = Math.min(365, Math.max(1, Number(rest[0]) || 30));
+          const r = await scanEmail({ google, store, extract: (i, d) => agent.extract(i, d, 'money') }, chatKey, { days, now, timeZone: tz });
+          return view([scanSummary(r), ...budgetAlerts(store, chatKey, now, tz)].join('\n\n'));
+        }
+        return { text: usage };
       }
       case '/prefs':
       case '/pref': {

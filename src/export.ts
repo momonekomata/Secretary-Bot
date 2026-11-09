@@ -1,5 +1,6 @@
 import { deflateRawSync } from 'node:zlib';
 import type { HealthDb } from './healthdb';
+import { flowOf } from './money';
 import type { Store } from './store';
 import { formatTime, localClock } from './time';
 
@@ -87,6 +88,7 @@ export function buildExport(store: Store, db: HealthDb, chatKey: string, timeZon
   const weights = store.weights(chatKey);
   const days = db.range('0000-01-01', '9999-12-31');
   const memories = store.memories(chatKey);
+  const money = store.money(chatKey);
   const usage = store.usage();
   const clock = (iso: string) => localClock(new Date(iso), timeZone);
 
@@ -132,6 +134,17 @@ export function buildExport(store: Store, db: HealthDb, chatKey: string, timeZon
       name: 'samsung_food_log.csv',
       data: csv(['date', 'meal', 'food', 'kcal'], days.flatMap(([day, r]) => (r.extra?.food?.items ?? []).map((i) => [day, i.meal, i.name, i.kcal]))),
     },
+    {
+      name: 'money.csv',
+      data: csv(
+        ['id', 'date', 'time', 'direction', 'category', 'amount', 'currency', 'payee', 'account', 'reference', 'note', 'copay_discount', 'source'],
+        money.map((t) => {
+          const c = clock(t.ts);
+          const dir = flowOf(t.category);
+          return [t.id, t.day, `${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`, dir === 'in' ? 'in' : dir === 'out' ? 'out' : 'moved', t.category, t.amount, t.currency ?? 'THB', t.payee, t.account, t.ref, t.note, t.discount, t.source];
+        }),
+      ),
+    },
     { name: 'memories.csv', data: csv(['id', 'saved', 'memory'], memories.map((m) => [m.id, m.createdAt.slice(0, 10), m.text])) },
     {
       name: 'ai_usage.csv',
@@ -141,7 +154,7 @@ export function buildExport(store: Store, db: HealthDb, chatKey: string, timeZon
       name: 'profile_and_settings.json',
       data: Buffer.from(
         JSON.stringify(
-          { exportedAt: now.toISOString(), timeZone, bodyProfile: store.body(chatKey), settings: store.settings(), todos: store.todos(chatKey), reminders: store.reminders(chatKey), healthImports: db.imports() },
+          { exportedAt: now.toISOString(), timeZone, bodyProfile: store.body(chatKey), budget: store.budget(chatKey), settings: store.settings(), todos: store.todos(chatKey), reminders: store.reminders(chatKey), healthImports: db.imports() },
           null,
           2,
         ),
@@ -155,10 +168,10 @@ export function buildExport(store: Store, db: HealthDb, chatKey: string, timeZon
     data: zip(files, now),
     summary:
       `💾 Your data as of ${formatTime(now, timeZone)}:\n` +
-      `• food_diary.csv: ${food.length} entries\n• weight.csv: ${weights.length} weigh-ins\n` +
+      `• food_diary.csv: ${food.length} entries\n• weight.csv: ${weights.length} weigh-ins\n• money.csv: ${money.length} transactions\n` +
       `• health_daily.csv: ${days.length} days (sleep, steps, calories, heart rate, weight…)\n` +
       `• workouts.csv, samsung_food_log.csv, memories.csv (${memories.length}), ai_usage.csv\n` +
-      '• profile_and_settings.json: body profile, personality, preferences, to-dos, reminders\n' +
+      '• profile_and_settings.json: body profile, budget, personality, preferences, to-dos, reminders\n' +
       'CSV files open in Excel, Google Sheets or Numbers.',
   };
 }

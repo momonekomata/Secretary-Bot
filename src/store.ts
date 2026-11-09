@@ -47,6 +47,37 @@ export interface FoodEntry {
   fat: number;
 }
 
+/** Money in or out, from a slip, an email or the chat. Amounts are positive; the category says which way it went. */
+export interface Txn {
+  id: number;
+  /** ISO instant. */
+  ts: string;
+  /** Local day YYYY-MM-DD. */
+  day: string;
+  amount: number;
+  /** Set only when not THB. */
+  currency?: string;
+  category: string;
+  payee: string;
+  account?: string;
+  /** Slip or bank reference number, for spotting duplicates. */
+  ref?: string;
+  note?: string;
+  /** Part paid by a co-pay scheme or discount (e.g. ไทยช่วยไทย 60/40). */
+  discount?: number;
+  source: 'slip' | 'email' | 'chat';
+  emailId?: string;
+}
+
+export interface Budget {
+  /** Monthly spending limit, THB. */
+  monthly?: number;
+  /** Per-category monthly limits, THB. */
+  categories?: Record<string, number>;
+  /** Day the budget month starts (e.g. 25 for payday). Default 1. */
+  startDay?: number;
+}
+
 export interface BodyProfile {
   sex?: 'male' | 'female';
   /** Birth year, so the age stays right. */
@@ -123,6 +154,10 @@ interface Data {
   reviews: Record<string, ReviewSession>;
   /** Last local day (YYYY-MM-DD) each scheduled job or one-a-day alert ran. */
   ranOn: Record<string, string>;
+  money: Record<string, Txn[]>;
+  budgets: Record<string, Budget>;
+  /** Gmail message ids already read for transactions. */
+  moneySeen: string[];
 }
 
 const empty = (): Data => ({
@@ -139,6 +174,9 @@ const empty = (): Data => ({
   weights: {},
   reviews: {},
   ranOn: {},
+  money: {},
+  budgets: {},
+  moneySeen: [],
 });
 
 /**
@@ -376,6 +414,57 @@ export class Store {
   setReview(chatKey: string, s: ReviewSession | null) {
     if (s) this.data.reviews[chatKey] = s;
     else delete this.data.reviews[chatKey];
+    this.save();
+  }
+
+  // --- money ---
+
+  money(chatKey: string): Txn[] {
+    return this.data.money[chatKey] ?? [];
+  }
+
+  addMoney(chatKey: string, t: Omit<Txn, 'id'>): Txn {
+    const txn = { id: this.data.nextId++, ...t };
+    // Keep a few years of transactions.
+    this.data.money[chatKey] = [...this.money(chatKey), txn].sort((a, b) => a.ts.localeCompare(b.ts)).slice(-10000);
+    this.save();
+    return txn;
+  }
+
+  updateMoney(chatKey: string, id: number, patch: Partial<Omit<Txn, 'id'>>): Txn | null {
+    const t = this.money(chatKey).find((x) => x.id === id);
+    if (!t) return null;
+    Object.assign(t, patch);
+    this.save();
+    return t;
+  }
+
+  removeMoney(chatKey: string, id: number): Txn | null {
+    const t = this.money(chatKey).find((x) => x.id === id) ?? null;
+    if (t) {
+      this.data.money[chatKey] = this.money(chatKey).filter((x) => x.id !== id);
+      this.save();
+    }
+    return t;
+  }
+
+  budget(chatKey: string): Budget {
+    return this.data.budgets[chatKey] ?? {};
+  }
+
+  updateBudget(chatKey: string, patch: Partial<Budget>) {
+    const next = { ...this.budget(chatKey), ...patch };
+    for (const k of Object.keys(next) as (keyof Budget)[]) if (next[k] === undefined) delete next[k];
+    this.data.budgets[chatKey] = next;
+    this.save();
+  }
+
+  moneySeen(): string[] {
+    return this.data.moneySeen;
+  }
+
+  markMoneySeen(ids: string[]) {
+    this.data.moneySeen = [...new Set([...this.data.moneySeen, ...ids])].slice(-5000);
     this.save();
   }
 

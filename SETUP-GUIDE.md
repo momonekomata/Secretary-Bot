@@ -128,6 +128,10 @@ In Telegram, search for your bot's username, open it, and press **Start**. It re
 - `/forecast` gives 7 days of weather.
 - `/persona` gives it a personality: tap a ready-made one, or describe your own, e.g.
   `/persona a cheerful Thai older sister who reminds me to drink water and calls me น้อง`. `/name Mali` renames it.
+- **Money:** send your payment slips (from your bank app, เป๋าตัง, e-wallets; several at once is fine) and it logs them.
+  `/budget set 20000` sets a monthly budget (`/budget set food 6000` for one category), `/budget` shows how the month stands,
+  `/budget scan` reads receipts, card alerts, bills and salary from your Gmail (it also checks every evening at 21:00).
+  If it asks what a transfer was for, just answer ("that was rent").
 - `/prefs add Always reply in Thai` or `/prefs add Use emoji` sets standing preferences that apply in every personality (or just tell
   it "from now on, always answer in Thai"). `/prefs` lists them, `/prefs remove 2` removes one.
 - `/export` sends you a .zip with your food diary, weights, health history, memories and settings as CSV files for Excel or Google Sheets.

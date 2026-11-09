@@ -20,7 +20,17 @@ export interface LineEvent {
   webhookEventId?: string;
   replyToken?: string;
   source: LineSource;
-  message?: { id: string; type: string; text?: string; fileName?: string; fileSize?: number; latitude?: number; longitude?: number };
+  message?: {
+    id: string;
+    type: string;
+    text?: string;
+    fileName?: string;
+    fileSize?: number;
+    latitude?: number;
+    longitude?: number;
+    /** Set on each image of several sent together. */
+    imageSet?: { id: string; index?: number; total?: number };
+  };
 }
 
 const API = 'https://api.line.me/v2/bot';
@@ -126,7 +136,7 @@ export class Line implements Channel {
     await Promise.all((body.events ?? []).map((e) => this.handleEvent(e)));
   }
 
-  async handleEvent(ev: LineEvent) {
+  async handleEvent(ev: LineEvent, prepared?: IncomingMessage) {
     if (ev.webhookEventId) {
       if (this.seen.has(ev.webhookEventId)) return; // LINE redelivery
       this.seen.add(ev.webhookEventId);
@@ -136,17 +146,20 @@ export class Line implements Channel {
     if (!['text', 'image', 'audio', 'file', 'location'].includes(ev.message.type)) return;
     const userId = ev.source.userId;
     const chatId = ev.source.groupId ?? ev.source.roomId ?? userId;
-    const incoming: IncomingMessage = { platform: 'line', chatKey: `line:${chatId}`, userId, text: (ev.message.text ?? '').trim() };
+    const incoming: IncomingMessage = prepared ?? { platform: 'line', chatKey: `line:${chatId}`, userId, text: (ev.message.text ?? '').trim() };
     if (ev.message.type === 'location' && ev.message.latitude !== undefined && ev.message.longitude !== undefined) {
       incoming.location = { lat: ev.message.latitude, lon: ev.message.longitude };
     }
+
+    const set = ev.message.type === 'image' ? ev.message.imageSet : undefined;
+    if (set?.id && (set.total ?? 0) > 1 && this.cfg.allowedUsers.includes(userId)) return this.collectImageSet(ev, { id: set.id, index: set.index ?? 0, total: set.total ?? 1 }, incoming);
 
     try {
       const allowed = this.cfg.allowedUsers.includes(userId);
       if (allowed && this.secretary.isSlow(incoming) && chatId === userId) {
         await this.post('/chat/loading/start', { chatId: userId, loadingSeconds: 60 }).catch(() => undefined);
       }
-      if (allowed && ev.message.type === 'image') incoming.images = await this.downloadImage(ev.message.id);
+      if (allowed && ev.message.type === 'image' && !incoming.images) incoming.images = await this.downloadImage(ev.message.id);
       if (allowed && ev.message.type === 'audio') incoming.audio = await this.downloadAudio(ev.message.id);
       if (allowed && ev.message.type === 'file') {
         const name = ev.message.fileName ?? 'file';
@@ -169,6 +182,39 @@ export class Line implements Channel {
       this.log('LINE handler error:', e);
       await this.send(chatId, friendlyError(e)).catch(() => undefined);
     }
+  }
+
+  private imageSets = new Map<string, { images: { index: number; img: IncomingImage[] }[]; first: LineEvent; timer?: NodeJS.Timeout; done: Promise<void>; resolve: () => void }>();
+  /** How long to wait for the rest of a set of images. */
+  imageSetWaitMs = 3000;
+
+  /** Several images sent together arrive as separate events: gather them and answer once (e.g. a batch of payment slips). */
+  private async collectImageSet(ev: LineEvent, set: { id: string; index: number; total: number }, incoming: IncomingMessage): Promise<void> {
+    let entry = this.imageSets.get(set.id);
+    if (!entry) {
+      let resolve = () => {};
+      const done = new Promise<void>((r) => (resolve = r));
+      entry = { images: [], first: ev, done, resolve };
+      this.imageSets.set(set.id, entry);
+    }
+    const e = entry;
+    const finish = () => {
+      clearTimeout(e.timer);
+      if (this.imageSets.get(set.id) !== e) return;
+      this.imageSets.delete(set.id);
+      const images = [...e.images].sort((a, b) => a.index - b.index).flatMap((x) => x.img).slice(0, 10);
+      void this.handleEvent({ ...e.first, webhookEventId: undefined, message: { ...e.first.message!, imageSet: undefined } }, { ...incoming, images }).finally(e.resolve);
+    };
+    clearTimeout(e.timer);
+    e.timer = setTimeout(finish, this.imageSetWaitMs);
+    try {
+      e.images.push({ index: set.index, img: await this.downloadImage(ev.message!.id) });
+    } catch (err) {
+      this.log('LINE image download failed:', (err as Error).message);
+      e.images.push({ index: set.index, img: [] });
+    }
+    if (e.images.length >= set.total) finish();
+    return e.done;
   }
 
   private async content(messageId: string): Promise<{ type: string; buf: Buffer }> {
