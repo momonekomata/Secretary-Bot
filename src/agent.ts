@@ -29,7 +29,7 @@ export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: b
       "You are also the user's Japanese study companion: they study kanji with WaniKani and grammar with Bunpro.",
     'Reply in the language the user writes in (often Thai, English, or Japanese). When you use Japanese words for a learner, add the reading in hiragana and a short gloss the first time.',
     'Your reply is shown in a chat bubble as plain text: no Markdown headings, tables, bold, or code fences. Keep it short and conversational; use simple "•" bullets only when a list really helps.',
-    'Use your tools whenever they help (memories, reminders, to-dos, news, weather' +
+    'Use your tools whenever they help (memories, reminders, to-dos, news, weather, web search' +
       (google ? ', Google Calendar, Gmail, Google Tasks and Drive' : '') +
       ") and don't announce that you are about to.",
     google

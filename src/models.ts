@@ -59,11 +59,15 @@ export interface Usage {
   webSearches?: number;
 }
 
+/** Per web search: Claude web search is $10 per 1,000; Gemini Google Search grounding about $14 per 1,000 queries (free allowance not counted). */
+const CLAUDE_SEARCH_USD = 0.01;
+const GEMINI_SEARCH_USD = 0.014;
+
 /** Estimated USD cost of one API call. */
 export function costOf(u: Usage, info: ModelInfo): number {
   const cacheRead = info.cacheRead ?? info.input * 0.1;
   return (
     (u.input * info.input + (u.cacheWrite ?? 0) * info.input * 1.25 + (u.cacheRead ?? 0) * cacheRead + u.output * info.output) / 1e6 +
-    (u.webSearches ?? 0) * 0.01
+    (u.webSearches ?? 0) * (info.provider === 'gemini' ? GEMINI_SEARCH_USD : CLAUDE_SEARCH_USD)
   );
 }

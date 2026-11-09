@@ -15,6 +15,7 @@ from a `/settings` menu. One bot process serves both apps, and it is built to ru
 | 🌅 **Scheduled messages** | 07:00 weather report, 08:00 morning briefing (weather + AQI, today's calendar, unread email, tasks, to-dos, news per topic, WaniKani), Friday 16:00 weekend planner. On demand: `/weather [city]`, `/brief`, `/weekend`. `/setcity` changes the city. |
 | 🌦️ **Weather & air quality** | Open-Meteo forecast, geocoding and air quality (US AQI, PM2.5), free with no key. Optional alert when AQI passes a threshold. |
 | 🎙️ **Voice notes** | Gemini transcribes the audio directly (no ffmpeg), detects the language, translates it, then the agent summarises it and creates any tasks, events or reminders mentioned. |
+| 🔎 **Web search** | Both AIs can search the web and read pages: Gemini through Google Search grounding and URL context, Claude through its web search and fetch tools. `BOT_WEB_TOOLS=off` turns it off. |
 | 📷 **Photos** | Send a picture of a sign, menu or textbook page and it reads and explains it. |
 | 💵 **Cost control** | Every call's tokens and estimated cost are logged. `/stats` shows today, this month and per model. A daily warning limit and a hard cap pause the AI until midnight. Nightly cleanup archives logs older than 30 days to a `.csv.gz` (sent to you on Telegram); `/cleanup` runs it now. |
 | 🩺 **Diagnostics** | `/status` checks the AI keys, the selected Gemini model, the Google sign-in, schedules and spend. After an automatic update the bot messages you the new version. |
@@ -94,7 +95,8 @@ Scheduler (30 s) ─► reminders, weather, briefing, weekend planner, cleanup, 
 
 - `src/agent.ts`: picks the provider for the selected model, enforces the spending cap, logs usage, keeps text-only history.
 - `src/llm/claude.ts`, `src/llm/gemini.ts`: the tool loops. Claude gets web search/fetch and server-side refusal fallbacks;
-  Gemini gets thinking levels and keeps thought signatures intact between tool calls.
+  Gemini gets thinking levels, keeps thought signatures intact between tool calls, and searches the web through
+  `src/llm/gemini-web.ts` (Google Search grounding and URL context, each in its own small request).
 - `src/briefings.ts` (morning, weather, weekend, news, stats, cleanup), `src/commands.ts`, `src/channel.ts` (shared message
   handling and voice), `src/telegram.ts`, `src/line.ts`, `src/scheduler.ts`, `src/google.ts`, `src/news.ts`, `src/weather.ts`.
 

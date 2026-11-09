@@ -1,6 +1,7 @@
 import { GoogleGenAI, ThinkingLevel, type Content, type GenerateContentParameters, type GenerateContentResponse, type Part } from '@google/genai';
 import type { Effort } from '../config';
 import type { Usage } from '../models';
+import { GEMINI_WEB_TOOLS, runGeminiWebTool } from './gemini-web';
 import { MAX_STEPS, type Provider, type TurnRequest, type TurnResult } from './types';
 
 /** The one SDK call the provider needs; injectable for tests. */
@@ -63,8 +64,10 @@ export class GeminiProvider implements Provider {
       ...req.history.map((t) => ({ role: t.role === 'assistant' ? 'model' : 'user', parts: [{ text: t.text }] })),
       { role: 'user', parts: userParts },
     ];
-    const tools = req.tools.length
-      ? [{ functionDeclarations: req.tools.map((t) => ({ name: t.name, description: t.description, parametersJsonSchema: t.parameters })) }]
+    const specs = [...req.tools, ...(req.webTools ? GEMINI_WEB_TOOLS : [])];
+    const webNames = new Set(GEMINI_WEB_TOOLS.map((t) => t.name));
+    const tools = specs.length
+      ? [{ functionDeclarations: specs.map((t) => ({ name: t.name, description: t.description, parametersJsonSchema: t.parameters })) }]
       : undefined;
 
     for (let step = 0; step < MAX_STEPS; step++) {
@@ -88,7 +91,10 @@ export class GeminiProvider implements Provider {
       if (calls.length) {
         const responses = await Promise.all(
           calls.map(async (call): Promise<Part> => {
-            const r = await req.runTool(call.name ?? '', call.args ?? {});
+            const r =
+              req.webTools && webNames.has(call.name ?? '')
+                ? await runGeminiWebTool(this.generate, req.model, call.name!, call.args ?? {}, req.onUsage)
+                : await req.runTool(call.name ?? '', call.args ?? {});
             return {
               functionResponse: { id: call.id, name: call.name, response: r.isError ? { error: r.content } : { output: r.content } },
             };

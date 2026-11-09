@@ -81,6 +81,40 @@ describe('Gemini provider', () => {
     expect(store.usage().reduce((s, u) => s + u.cost, 0)).toBeCloseTo(0.002625, 6);
   });
 
+  it('searches the web with Google Search grounding in a separate request', async () => {
+    const store = new Store(null);
+    const grounded = {
+      ...geminiRes([{ text: 'The SET index closed at 1,420 today.' }]),
+      candidates: [
+        {
+          content: { role: 'model', parts: [{ text: 'The SET index closed at 1,420 today.' }] },
+          finishReason: 'STOP',
+          groundingMetadata: { webSearchQueries: ['SET index today'], groundingChunks: [{ web: { uri: 'https://example.com/set', title: 'example.com' } }] },
+        },
+      ],
+    } as unknown as ReturnType<typeof geminiRes>;
+    const { generate, calls } = fakeGemini([
+      geminiRes([{ functionCall: { id: 'w1', name: 'web_search', args: { query: 'SET index today' } } }]),
+      grounded,
+      geminiRes([{ text: 'It closed at 1,420.' }]),
+    ]);
+    const agent = new Agent(testConfig(), store, { gemini: new GeminiProvider(generate) }, null, () => NOW);
+    expect(await agent.reply({ chatKey: 'c', text: 'How did the Thai stock market do today?' })).toBe('It closed at 1,420.');
+
+    const decls = (calls[0].config?.tools?.[0] as { functionDeclarations: { name: string }[] }).functionDeclarations.map((d) => d.name);
+    expect(decls).toEqual(expect.arrayContaining(['web_search', 'read_webpage', 'get_news']));
+    expect(calls[1].config?.tools).toEqual([{ googleSearch: {} }]); // the search sub-request uses only the built-in tool
+    const result = (calls[2].contents as { parts: { functionResponse?: { response: { output: string } } }[] }[]).at(-1)!.parts[0].functionResponse!;
+    expect(result.response.output).toContain('Sources:\n• example.com: https://example.com/set');
+    expect(store.usage().find((u) => u.webSearches === 1)).toBeTruthy();
+  });
+
+  it('leaves web tools out when BOT_WEB_TOOLS is off', async () => {
+    const { generate, calls } = fakeGemini([geminiRes([{ text: 'ok' }])]);
+    await new Agent(testConfig({ webTools: false }), new Store(null), { gemini: new GeminiProvider(generate) }).reply({ chatKey: 'c', text: 'x' });
+    expect(JSON.stringify(calls[0].config?.tools)).not.toContain('web_search');
+  });
+
   it('retries without a thinking level when the model rejects it', async () => {
     const err = Object.assign(new Error('thinking_level is not supported for this model'), { status: 400 });
     const { generate, calls } = fakeGemini([err, geminiRes([{ text: 'hi' }])]);
