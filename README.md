@@ -4,6 +4,7 @@ A private assistant that lives in your Telegram and/or LINE chats, powered by **
 from a `/settings` menu. One bot process serves both apps, and it is built to run 24/7 on a NAS in Docker.
 
 > **New to this?** Follow the step-by-step [beginner setup guide](SETUP-GUIDE.md) instead of this page.
+> **Using it?** The [user manual](MANUAL.md) lists every feature and command.
 
 ## What it does
 
