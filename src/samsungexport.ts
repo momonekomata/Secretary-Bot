@@ -308,32 +308,68 @@ export class SamsungImporter {
   }
 }
 
-/** Unpacks a .zip or .rar with unar (or bsdtar), both in the Docker image; gives up after `timeoutMs`. */
-export function extract(archive: string, outDir: string, timeoutMs = 20 * 60_000): Promise<void> {
+export interface ExtractOptions {
+  /** Stop when no file has come out for this long (default 10 minutes). */
+  idleMs?: number;
+  /** Stop after this long in total (default 60 minutes). */
+  timeoutMs?: number;
+  /** Called with the number of CSV files unpacked so far. */
+  onFile?: (count: number) => void;
+}
+
+/**
+ * Unpacks only the CSV files of a .zip or .rar (a Samsung Health export also holds tens of thousands of small
+ * JSON files and images the importer doesn't read; writing them all to a NAS disk can take very long).
+ * Uses unar, falling back to bsdtar; both are in the Docker image.
+ */
+export function extract(archive: string, outDir: string, opts: ExtractOptions = {}): Promise<void> {
+  const idleMs = opts.idleMs ?? 10 * 60_000;
+  const timeoutMs = opts.timeoutMs ?? 60 * 60_000;
   const run = (cmd: string, args: string[]) =>
     new Promise<void>((resolve, reject) => {
-      const p = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+      const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
       let err = '';
-      let timedOut = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
+      let count = 0;
+      let stopped: string | null = null;
+      const stop = (why: string) => {
+        stopped = why;
         p.kill('SIGKILL');
-      }, timeoutMs);
-      p.stderr.on('data', (d) => (err += d));
+      };
+      const total = setTimeout(() => stop(`Unpacking took longer than ${Math.round(timeoutMs / 60_000)} minutes and was stopped.`), timeoutMs);
+      let idle = setTimeout(() => stop(`Unpacking stalled (no file for ${Math.round(idleMs / 60_000)} minutes) and was stopped.`), idleMs);
+      // Both tools print one line per unpacked file (unar on stdout, bsdtar -v on stderr).
+      const onOutput = (d: Buffer) => {
+        const files = String(d).split('\n').filter((l) => /\.csv\b/i.test(l)).length;
+        if (!files) return;
+        count += files;
+        clearTimeout(idle);
+        idle = setTimeout(() => stop(`Unpacking stalled (no file for ${Math.round(idleMs / 60_000)} minutes) and was stopped.`), idleMs);
+        opts.onFile?.(count);
+      };
+      p.stdout.on('data', onOutput);
+      p.stderr.on('data', (d: Buffer) => {
+        err += d;
+        onOutput(d);
+      });
+      const done = () => {
+        clearTimeout(total);
+        clearTimeout(idle);
+      };
       p.on('error', (e) => {
-        clearTimeout(timer);
+        done();
         reject(e);
       });
       p.on('close', (code) => {
-        clearTimeout(timer);
-        if (timedOut) reject(new TimeoutError(`Unpacking took longer than ${Math.round(timeoutMs / 60_000)} minutes and was stopped.`));
+        done();
+        if (stopped) reject(new TimeoutError(stopped));
         else if (code === 0) resolve();
-        else reject(new Error(`${cmd} failed: ${err.slice(0, 200)}`));
+        else reject(new Error(`${cmd} failed: ${err.slice(-200)}`));
       });
     });
-  return run('unar', ['-q', '-f', '-o', outDir, archive]).catch((e) => {
+  // -nr: don't unpack archives inside the archive; '*.csv' matches CSVs in any folder.
+  return run('unar', ['-f', '-nr', '-o', outDir, archive, '*.csv']).catch((e) => {
     if (e instanceof TimeoutError) throw e;
-    return run('bsdtar', ['-xf', archive, '-C', outDir]);
+    return run('bsdtar', ['-xvf', archive, '-C', outDir, '--include', '*.csv']);
   });
 }
 
@@ -375,7 +411,7 @@ export async function importFromDrive(google: Google, db: HealthDb, timeZone: st
     });
     step(`📂 Downloaded ${mb(bytes)} MB. Unpacking…`);
     const out = join(work, 'out');
-    await extract(archive, out);
+    await extract(archive, out, { onFile: (n) => step(`📂 Unpacking… ${n} data file${n === 1 ? '' : 's'} so far`, true) });
     rmSync(archive, { force: true });
     step('📖 Unpacked. Reading your health data…');
     const label = (t: string) => t.replace(/^tracker\./, '').replace(/[._]/g, ' ');

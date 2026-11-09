@@ -62,9 +62,31 @@ describe('background health import', () => {
       '📦 Found samsung_health_export.zip. Downloading from Google Drive…',
       '⬇️ Downloaded 0 of 0 MB…',
       '📂 Downloaded 0 MB. Unpacking…',
+      '📂 Unpacking… 1 data file so far',
       '📖 Unpacked. Reading your health data…',
       '📖 Reading 1 of 1: pedometer day summary…',
     ]);
+  });
+});
+
+describe('unpacking', () => {
+  it.skipIf(spawnSync('bsdtar', ['--version']).status !== 0)('takes out only the CSV files, reporting each', async () => {
+    const { extract } = await import('../samsungexport');
+    const { readdirSync } = await import('node:fs');
+    const src = mkdtempSync(join(tmpdir(), 'sb-x-'));
+    mkdirSync(join(src, 'export', 'jsons', 'heart'), { recursive: true });
+    for (let i = 0; i < 50; i++) writeFileSync(join(src, 'export', 'jsons', 'heart', `${i}.json`), '{}');
+    writeFileSync(join(src, 'export', 'com.samsung.shealth.sleep.20261109120000.csv'), 'a\n');
+    writeFileSync(join(src, 'export', 'com.samsung.health.weight.20261109120000.csv'), 'a\n');
+    const zip = join(src, 'x.zip');
+    expect(spawnSync('bsdtar', ['-a', '-cf', zip, '-C', src, 'export']).status).toBe(0);
+    const out = join(src, 'out');
+    const counts: number[] = [];
+    await extract(zip, out, { onFile: (n) => counts.push(n) });
+    const all = readdirSync(out, { recursive: true }).map(String);
+    expect(all.filter((f) => f.endsWith('.csv'))).toHaveLength(2);
+    expect(all.some((f) => f.endsWith('.json'))).toBe(false);
+    expect(counts.at(-1)).toBe(2);
   });
 });
 
