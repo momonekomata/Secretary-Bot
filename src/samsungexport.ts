@@ -113,7 +113,10 @@ export class SamsungImporter {
   }
 
   /** Reads every recognised CSV under `dir` into per-day records. */
-  async importDir(dir: string): Promise<{ records: Record<string, DayRecord>; report: Omit<ImportReport, 'file'> }> {
+  async importDir(
+    dir: string,
+    onFile?: (index: number, count: number, type: string) => void,
+  ): Promise<{ records: Record<string, DayRecord>; report: Omit<ImportReport, 'file'> }> {
     const days = new Days();
     const types: ImportReport['types'] = {};
     const skipped: string[] = [];
@@ -127,6 +130,11 @@ export class SamsungImporter {
     };
     walk(dir);
 
+    const usable = files.filter((f) => {
+      const t = exportType(f);
+      return t && this.handler(t, new Days());
+    }).length;
+    let index = 0;
     for (const file of files) {
       const type = exportType(file);
       const handler = type ? this.handler(type, days) : null;
@@ -134,6 +142,7 @@ export class SamsungImporter {
         skipped.push(basename(file));
         continue;
       }
+      onFile?.(++index, usable, type);
       const seen = new Set<string>();
       const rows = await this.readFile(file, (row) => {
         const d = handler(row);
@@ -299,21 +308,57 @@ export class SamsungImporter {
   }
 }
 
-/** Unpacks a .zip or .rar into a new temp folder with unar (or bsdtar), both in the Docker image. */
-export function extract(archive: string, outDir: string): Promise<void> {
+/** Unpacks a .zip or .rar with unar (or bsdtar), both in the Docker image; gives up after `timeoutMs`. */
+export function extract(archive: string, outDir: string, timeoutMs = 20 * 60_000): Promise<void> {
   const run = (cmd: string, args: string[]) =>
     new Promise<void>((resolve, reject) => {
       const p = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
       let err = '';
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        p.kill('SIGKILL');
+      }, timeoutMs);
       p.stderr.on('data', (d) => (err += d));
-      p.on('error', reject);
-      p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} failed: ${err.slice(0, 200)}`))));
+      p.on('error', (e) => {
+        clearTimeout(timer);
+        reject(e);
+      });
+      p.on('close', (code) => {
+        clearTimeout(timer);
+        if (timedOut) reject(new TimeoutError(`Unpacking took longer than ${Math.round(timeoutMs / 60_000)} minutes and was stopped.`));
+        else if (code === 0) resolve();
+        else reject(new Error(`${cmd} failed: ${err.slice(0, 200)}`));
+      });
     });
-  return run('unar', ['-q', '-f', '-o', outDir, archive]).catch(() => run('bsdtar', ['-xf', archive, '-C', outDir]));
+  return run('unar', ['-q', '-f', '-o', outDir, archive]).catch((e) => {
+    if (e instanceof TimeoutError) throw e;
+    return run('bsdtar', ['-xf', archive, '-C', outDir]);
+  });
+}
+
+class TimeoutError extends Error {}
+
+export interface ImportOptions {
+  log?: (...a: unknown[]) => void;
+  /** Progress messages for the user (already throttled for the noisy steps). */
+  progress?: (message: string) => void;
+  /** Minimum gap between repeated progress messages of the same step. */
+  progressEveryMs?: number;
 }
 
 /** Finds the newest Samsung Health export archive in Drive, imports it, and reports what was found. */
-export async function importFromDrive(google: Google, db: HealthDb, timeZone: string, log: (...a: unknown[]) => void = console.log): Promise<ImportReport> {
+export async function importFromDrive(google: Google, db: HealthDb, timeZone: string, opts: ImportOptions = {}): Promise<ImportReport> {
+  const log = opts.log ?? console.log;
+  const every = opts.progressEveryMs ?? 60_000;
+  let lastProgress = 0;
+  const step = (message: string, throttled = false) => {
+    log(message);
+    if (throttled && Date.now() - lastProgress < every) return;
+    lastProgress = Date.now();
+    opts.progress?.(message);
+  };
+  const mb = (b: number) => Math.round(b / 1e6);
   const files = await google.listFiles(
     "(name contains 'samsung_health' or name contains 'samsunghealth' or name contains 'Samsung Health') and (name contains '.rar' or name contains '.zip') and trashed = false",
     'modifiedTime desc',
@@ -323,13 +368,18 @@ export async function importFromDrive(google: Google, db: HealthDb, timeZone: st
   if (!file) throw new Error('No Samsung Health export (.zip or .rar with "samsung_health" in its name) found in Google Drive.');
   const work = mkdtempSync(join(tmpdir(), 'sb-shealth-'));
   try {
+    step(`📦 Found ${file.name}. Downloading from Google Drive…`);
     const archive = join(work, file.name.endsWith('.zip') ? 'export.zip' : 'export.rar');
-    const bytes = await google.downloadToFile(file.id, archive);
-    log(`Downloaded ${file.name} (${Math.round(bytes / 1e6)} MB)`);
+    const bytes = await google.downloadToFile(file.id, archive, {
+      onProgress: (b, total) => step(`⬇️ Downloaded ${mb(b)}${total ? ` of ${mb(total)}` : ''} MB…`, true),
+    });
+    step(`📂 Downloaded ${mb(bytes)} MB. Unpacking…`);
     const out = join(work, 'out');
     await extract(archive, out);
     rmSync(archive, { force: true });
-    const { records, report } = await new SamsungImporter(timeZone, log).importDir(out);
+    step('📖 Unpacked. Reading your health data…');
+    const label = (t: string) => t.replace(/^tracker\./, '').replace(/[._]/g, ' ');
+    const { records, report } = await new SamsungImporter(timeZone, log).importDir(out, (i, n, type) => step(`📖 Reading ${i} of ${n}: ${label(type)}…`, true));
     db.merge(records, false);
     db.noteImport(file.name, Object.keys(records));
     return { file: file.name, ...report };
@@ -351,3 +401,43 @@ export function formatReport(r: ImportReport, dbDays: number): string {
     .filter(Boolean)
     .join('\n');
 }
+
+/** The one import that may run at a time, in the background. */
+export class ImportJob {
+  running: { startedAt: number; stage: string; done: Promise<void> } | null = null;
+
+  /**
+   * Starts `run` in the background. Progress and the final report go to `notify`.
+   * Returns false when an import is already running.
+   */
+  start(run: (progress: (m: string) => void) => Promise<string>, notify: (text: string) => Promise<void>, timeoutMs = 45 * 60_000): boolean {
+    if (this.running) return false;
+    const state = { startedAt: Date.now(), stage: 'starting', done: Promise.resolve() };
+    this.running = state;
+    const progress = (m: string) => {
+      state.stage = m;
+      void notify(m).catch(() => undefined);
+    };
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`The import took longer than ${Math.round(timeoutMs / 60_000)} minutes and was stopped.`)), timeoutMs);
+    });
+    state.done = Promise.race([run(progress), timeout])
+      .then((report) => notify(report))
+      .catch((e) => notify(`❌ The health import failed: ${(e as Error).message}\nYou can try again with /healthimport.`))
+      .catch(() => undefined)
+      .finally(() => {
+        clearTimeout(timer);
+        this.running = null;
+      });
+    return true;
+  }
+
+  status(): string {
+    if (!this.running) return 'No health import is running.';
+    const min = Math.max(0, Math.round((Date.now() - this.running.startedAt) / 60_000));
+    return `📦 A health import is running (started ${min} min ago). Last step: ${this.running.stage}`;
+  }
+}
+
+export const healthImport = new ImportJob();

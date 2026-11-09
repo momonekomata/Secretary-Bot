@@ -121,7 +121,8 @@ In Telegram, search for your bot's username, open it, and press **Start**. It re
   once Google is connected (Part 3): `/health` shows steps, heart rate, SpO2, workouts and scale readings, your morning briefing gets a
   summary (last night's sleep, yesterday's steps, calories and workouts), and new weigh-ins go into your weight history.
   For older history, export everything from Samsung Health (**Settings → Download personal data**), upload the .zip or .rar to Google Drive,
-  and send `/healthimport`. It takes a few minutes and replies with what it imported.
+  and send `/healthimport`. It runs in the background (keep chatting meanwhile), posts progress as it downloads, unpacks and reads
+  the files, and ends with what it imported. `/healthimport status` shows where it is.
 - `/roleplay` starts a scene: a story, a mystery, or Japanese conversation practice like ordering ramen in Tokyo. `/roleplay end` stops.
 - `/forecast` gives 7 days of weather.
 - `/persona` gives it a personality: tap a ready-made one, or describe your own, e.g.

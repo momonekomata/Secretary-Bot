@@ -98,6 +98,7 @@ const channels = new Channels();
 const telegram = config.telegram.token ? new Telegram(config.telegram, secretary) : null;
 const files = new FileHost(config.publicUrl);
 const line = config.line.channelSecret && config.line.accessToken ? new Line(config.line, secretary, files) : null;
+secretary.setNotifier((chatKey, text) => channels.send(chatKey, text));
 if (telegram) channels.add(telegram);
 if (line) channels.add(line);
 if (!telegram && !line) console.warn('Neither Telegram nor LINE is configured. See README.md.');

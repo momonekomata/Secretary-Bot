@@ -110,8 +110,17 @@ export class Secretary {
     }
   }
 
+  private notifier: ((chatKey: string, text: string) => Promise<void>) | null = null;
+
+  /** Lets background jobs post to a chat (set once the channels exist). */
+  setNotifier(fn: (chatKey: string, text: string) => Promise<void>) {
+    this.notifier = fn;
+  }
+
   private async route(m: IncomingMessage): Promise<CommandReply | null> {
+    const notifier = this.notifier;
     const ctx = {
+      notify: notifier ? (text: string) => notifier(m.chatKey, text) : undefined,
       chatKey: m.chatKey,
       userId: m.userId,
       agent: this.agent,
