@@ -95,6 +95,22 @@ export interface Energy {
   total: number;
 }
 
+/** Extra measurements, mostly from the Samsung Health export. */
+export interface Extras {
+  /** Heart-rate variability (ms). */
+  hrv?: number;
+  /** Breaths per minute. */
+  respiratory?: number;
+  floors?: number;
+  /** Samsung stress score (0-100). */
+  stress?: number;
+  waterMl?: number;
+  bloodPressure?: { systolic: number; diastolic: number };
+  heightCm?: number;
+  /** Food logged in Samsung Health. */
+  food?: { kcal: number; items: { name: string; kcal: number; meal: string }[] };
+}
+
 export interface DaySummary {
   /** YYYY-MM-DD */
   day: string;
@@ -106,6 +122,7 @@ export interface DaySummary {
   /** The night before this day (sleep that ended on it). */
   sleep: SleepSummary | null;
   energy: Energy | null;
+  extra?: Extras;
 }
 
 const num = (v: string | undefined) => {
@@ -313,5 +330,15 @@ export function formatDay(s: DaySummary): string {
     parts.push(`workout: ${w.type} ${w.minutes} min${w.km ? `, ${w.km} km` : ''}${w.kcal ? `, ${w.kcal} kcal` : ''}${w.avgHr ? `, avg HR ${w.avgHr}` : ''}`);
   }
   if (s.energy) parts.push(`burned ${s.energy.total} kcal (${s.energy.active} active${s.energy.resting ? `, ${s.energy.resting} resting` : ''})`);
+  const x = s.extra;
+  if (x) {
+    if (x.hrv) parts.push(`HRV ${x.hrv} ms`);
+    if (x.respiratory) parts.push(`breathing ${x.respiratory}/min`);
+    if (x.stress) parts.push(`stress ${x.stress}`);
+    if (x.floors) parts.push(`${x.floors} floors`);
+    if (x.waterMl) parts.push(`water ${x.waterMl} ml`);
+    if (x.bloodPressure) parts.push(`blood pressure ${x.bloodPressure.systolic}/${x.bloodPressure.diastolic}`);
+    if (x.food?.kcal) parts.push(`ate ${x.food.kcal} kcal (Samsung Health food log: ${x.food.items.slice(0, 6).map((i) => i.name).join(', ')}${x.food.items.length > 6 ? ', …' : ''})`);
+  }
   return `${s.day}: ${parts.length ? parts.join('; ') : 'no watch data'}`;
 }

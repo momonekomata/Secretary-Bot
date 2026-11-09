@@ -34,7 +34,7 @@ export class BudgetExceeded extends Error {}
 
 const PROVIDER_NAMES: Record<ProviderName, string> = { gemini: 'Gemini', claude: 'Claude' };
 
-export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: boolean, personality = ''): string {
+export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: boolean, personality = '', preferences: string[] = []): string {
   return [
     `You are ${cfg.botName}, the user's personal secretary and news curator, living in their Telegram and LINE chats.`,
     personality
@@ -43,7 +43,11 @@ export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: b
       : '',
     'You help with planning, scheduling, email, research, writing and translation, and keep the user up to date on news they care about. ' +
       "You are also the user's Japanese study companion: they study kanji with WaniKani and grammar with Bunpro.",
-    'Reply in the language the user writes in (often Thai, English, or Japanese). When you use Japanese words for a learner, add the reading in hiragana and a short gloss the first time.',
+    'Reply in the language the user writes in (often Thai, English, or Japanese), unless their standing preferences below say otherwise. When you use Japanese words for a learner, add the reading in hiragana and a short gloss the first time.',
+    preferences.length
+      ? `The user's standing preferences. Follow them in every reply, in every personality and scene, unless the user asks otherwise in the moment:\n${preferences.map((p) => `• ${p}`).join('\n')}`
+      : '',
+    'When the user states a lasting preference about how you should reply ("from now on…", "always…", "stop using…"), save it with preference_add (and remove outdated ones with preference_remove). Facts about the user go to remember instead.',
     'Your reply is shown in a chat bubble as plain text: no Markdown headings, tables, bold, or code fences. Keep it short and conversational; use simple "•" bullets only when a list really helps.',
     'Use your tools whenever they help (memories, reminders, to-dos, news, weather, web search' +
       (google ? ', Google Calendar, Gmail, Google Tasks and Drive' : '') +
@@ -94,9 +98,10 @@ export class Agent {
   /** The system prompt. Rebuilt only when the name or personality changes, so prompt caches stay warm. */
   private get system(): string {
     const s = this.store.settings();
-    const key = `${this.botName}\u0000${s.persona ?? ''}`;
+    const prefs = s.preferences ?? [];
+    const key = `${this.botName}\u0000${s.persona ?? ''}\u0000${prefs.join('\u0001')}`;
     if (this.systemCache?.key !== key) {
-      this.systemCache = { key, text: systemPrompt({ botName: this.botName, persona: this.cfg.persona }, !!this.google, s.persona ?? '') };
+      this.systemCache = { key, text: systemPrompt({ botName: this.botName, persona: this.cfg.persona }, !!this.google, s.persona ?? '', prefs) };
     }
     return this.systemCache.text;
   }

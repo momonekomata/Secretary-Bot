@@ -122,11 +122,15 @@ In Telegram, search for your bot's username, open it, and press **Start**. It re
   summary (last night's sleep, yesterday's steps, calories and workouts), and new weigh-ins go into your weight history.
   For older history, export everything from Samsung Health (**Settings → Download personal data**), upload the .zip or .rar to Google Drive,
   and send `/healthimport`. It runs in the background (keep chatting meanwhile), posts progress as it downloads, unpacks and reads
-  the files, and ends with what it imported. `/healthimport status` shows where it is.
+  the files, and ends with what it imported. `/healthimport status` shows where it is. Besides steps, sleep, heart rate and workouts it
+  also brings in HRV, breathing rate, stress, floors climbed, water, blood pressure, height and the food you logged in Samsung Health.
 - `/roleplay` starts a scene: a story, a mystery, or Japanese conversation practice like ordering ramen in Tokyo. `/roleplay end` stops.
 - `/forecast` gives 7 days of weather.
 - `/persona` gives it a personality: tap a ready-made one, or describe your own, e.g.
   `/persona a cheerful Thai older sister who reminds me to drink water and calls me น้อง`. `/name Mali` renames it.
+- `/prefs add Always reply in Thai` or `/prefs add Use emoji` sets standing preferences that apply in every personality (or just tell
+  it "from now on, always answer in Thai"). `/prefs` lists them, `/prefs remove 2` removes one.
+- `/export` sends you a .zip with your food diary, weights, health history, memories and settings as CSV files for Excel or Google Sheets.
 - `/news` gives you a news briefing; `/weather` today's weather and air quality; `/weekend` a weekend planner.
 - `/add Call the dentist` and `/todo` manage a to-do list.
 - Hold the 🎤 button and **send a voice note** (in Thai, English or Japanese): it transcribes it, translates it, summarises it,
@@ -286,6 +290,11 @@ on GitHub open your profile → **Packages** → **secretary-bot** → **Package
 - **Other NAS (QNAP, Unraid, Portainer) or SSH:** in that folder run `docker compose up -d`.
 
 Send `/status` to your bot from Telegram to check everything is connected. The containers restart by themselves if the NAS reboots.
+
+**Your data stays.** Everything you set or log (personality, preferences, settings, food, weights, memories, to-dos, reminders,
+health history) is saved in the `data` folder (`store.json` and `healthdb.json`). Restarts, NAS reboots and automatic updates keep it;
+only deleting that folder loses it. Include `docker/secretary-bot/data` in your NAS backups (Synology **Hyper Backup**), and send
+`/export` any time for a spreadsheet copy.
 
 ---
 

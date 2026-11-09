@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { BudgetExceeded, type Agent } from './agent';
 import { archiveUsage, usageStats, type Briefings } from './briefings';
 import { EFFORTS, type Config, type Effort } from './config';
@@ -11,6 +13,7 @@ import type { Reviews } from './review';
 import { localDay } from './time';
 import { weatherText } from './tools';
 import { formatDay as formatWatchDay } from './healthsync';
+import { buildExport } from './export';
 import { formatReport, healthImport, importFromDrive } from './samsungexport';
 import type { Store } from './store';
 import { geocode } from './weather';
@@ -62,6 +65,8 @@ export const HELP = [
   '🎬 Roleplay: /roleplay (scenes, stories, Japanese conversation practice), /roleplay end',
   '🌦️ Weather: /weather, /forecast (7 days), /weekend',
   '🎭 Personality: /persona (pick one or describe your own), /name <new name>, /ttsvoice <voice>',
+  '📌 Preferences: /prefs (e.g. /prefs add Always reply in Thai), kept across personalities and updates',
+  '💾 Your data: /export (food, weight, health history, memories and settings as a .zip)',
   '⚙️ Settings: /settings (AI model, thinking effort, voice translation), /stats, /status, /cleanup',
   '💬 Chat: /reset (forget this conversation, keep memories), /id',
   '',
@@ -229,6 +234,44 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         return settingsView(ctx, `✅ Voice notes will be translated into ${arg}.\n`);
       }
 
+      case '/export': {
+        const exp = buildExport(store, agent.health.db, chatKey, cfg.timezone, now);
+        // Also keep a copy on the NAS (data/backups), for chats that can't receive files directly.
+        if (cfg.dataDir) {
+          mkdirSync(join(cfg.dataDir, 'backups'), { recursive: true });
+          writeFileSync(join(cfg.dataDir, 'backups', exp.name), exp.data);
+        }
+        return { text: exp.summary, file: { name: exp.name, data: exp.data } };
+      }
+      case '/prefs':
+      case '/pref': {
+        const prefs = store.settings().preferences ?? [];
+        const [sub, ...rest] = arg.split(/\s+/);
+        const value = rest.join(' ').trim();
+        if (sub === 'add' && value) {
+          store.updateSettings({ preferences: [...prefs, value.slice(0, 200)].slice(-20) });
+          return { text: `📌 Saved: ${value}` };
+        }
+        if ((sub === 'remove' || sub === 'delete') && /^\d+$/.test(value)) {
+          const i = Number(value) - 1;
+          if (!prefs[i]) return { text: `No preference #${value}. See /prefs.` };
+          store.updateSettings({ preferences: prefs.filter((_, j) => j !== i) });
+          return { text: `🗑️ Removed: ${prefs[i]}` };
+        }
+        if (sub === 'clear') {
+          store.updateSettings({ preferences: [] });
+          return { text: '🗑️ All preferences cleared.' };
+        }
+        return {
+          text: [
+            prefs.length ? `📌 Your standing preferences:\n${prefs.map((p, i) => `${i + 1}. ${p}`).join('\n')}` : '📌 No standing preferences yet.',
+            '',
+            'Add one: /prefs add Always reply in Thai',
+            'Remove one: /prefs remove 2   ·   Remove all: /prefs clear',
+            'You can also just tell me, e.g. "from now on use emoji in your replies".',
+          ].join('\n'),
+        };
+      }
       case '/persona': {
         if (!arg) return personaView(ctx);
         if (['off', 'default', 'reset', 'none'].includes(arg.toLowerCase())) {
@@ -352,7 +395,11 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         if (!google?.has('drive')) return needGoogle();
         if (arg === 'status' || healthImport.running) return { text: healthImport.status() };
         const db = agent.health.db;
-        const run = async (progress: (m: string) => void) => formatReport(await importFromDrive(google, db, cfg.timezone, { progress }), db.size);
+        const run = async (progress: (m: string) => void) => {
+          const report = await importFromDrive(google, db, cfg.timezone, { progress });
+          if (report.latestHeightCm && !store.body(chatKey).heightCm) store.updateBody(chatKey, { heightCm: report.latestHeightCm });
+          return formatReport(report, db.size);
+        };
         if (!ctx.notify) return { text: await run(() => undefined) };
         healthImport.start(run, ctx.notify);
         return {

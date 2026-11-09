@@ -153,6 +153,16 @@ const ROLEPLAY: ToolSpec[] = [
   },
 ];
 
+const PREFERENCES: ToolSpec[] = [
+  {
+    name: 'preference_add',
+    description:
+      'Save a standing instruction about how to reply (language, emoji, tone, length, format), e.g. "Reply in Thai by default". It applies to every future reply.',
+    parameters: obj({ text: str('The instruction, one short sentence.') }),
+  },
+  { name: 'preference_remove', description: 'Remove a standing preference by its number (1 = first).', parameters: obj({ number: int('Preference number.') }) },
+];
+
 const WANIKANI: ToolSpec = {
   name: 'get_wanikani_status',
   description: "Get the user's live WaniKani progress: level, lessons and reviews available now, upcoming reviews, and item counts by SRS stage.",
@@ -303,7 +313,7 @@ const MAPS: ToolSpec[] = [
 
 export function toolSpecs(opts: { wanikani: boolean; google: Google | null; maps: boolean }): ToolSpec[] {
   const g = opts.google;
-  return [...CORE, ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : [])];
+  return [...CORE, ...PREFERENCES, ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : [])];
 }
 
 const STAGES = ['Lesson', 'Apprentice 1', 'Apprentice 2', 'Apprentice 3', 'Apprentice 4', 'Guru 1', 'Guru 2', 'Master', 'Enlightened', 'Burned'];
@@ -453,6 +463,21 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
         const to = /^\d{4}-\d{2}-\d{2}$/.test(s('to')) ? s('to') : localDay(now, tz);
         const rows = ctx.health.db.range(from, to);
         return ok(`Health history ${from} to ${to}, ${rows.length} days with data:\n${history(rows, s('group') === 'week' ? 'week' : 'month')}`);
+      }
+      case 'preference_add': {
+        const text = s('text').slice(0, 200);
+        if (!text) return fail('Empty preference.');
+        const prefs = ctx.store.settings().preferences ?? [];
+        if (prefs.some((p) => p.toLowerCase() === text.toLowerCase())) return ok('Already saved.');
+        ctx.store.updateSettings({ preferences: [...prefs, text].slice(-20) });
+        return ok(`Saved preference #${prefs.length + 1}: ${text}`);
+      }
+      case 'preference_remove': {
+        const prefs = ctx.store.settings().preferences ?? [];
+        const i = Number(a.number) - 1;
+        if (!(i >= 0 && i < prefs.length)) return fail(`No preference #${a.number}. There are ${prefs.length}.`);
+        ctx.store.updateSettings({ preferences: prefs.filter((_, j) => j !== i) });
+        return ok(`Removed: ${prefs[i]}`);
       }
       case 'roleplay_start':
         if (!s('scenario')) return fail('Describe the scene.');

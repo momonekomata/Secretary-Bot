@@ -79,6 +79,8 @@ export interface Settings {
   personaKey?: string;
   /** Personality description (a preset's text, or the user's own). */
   persona?: string;
+  /** Standing instructions from the user ("always reply in Thai", "use emoji"), kept across personalities. */
+  preferences?: string[];
   /** Gemini prebuilt voice for spoken replies, and how to speak. */
   ttsVoice?: string;
   speakingStyle?: string;
