@@ -32,6 +32,8 @@ export type Providers = Partial<Record<ProviderName, Provider>>;
 
 export class BudgetExceeded extends Error {}
 
+const PROVIDER_NAMES: Record<ProviderName, string> = { gemini: 'Gemini', claude: 'Claude' };
+
 export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: boolean, personality = ''): string {
   return [
     `You are ${cfg.botName}, the user's personal secretary and news curator, living in their Telegram and LINE chats.`,
@@ -131,37 +133,64 @@ export class Agent {
     return cost;
   }
 
-  spentToday(): number {
+  /** Today's estimated spend, for one provider or all together. */
+  spentToday(provider?: ProviderName): number {
     const today = localDay(this.now(), this.cfg.timezone);
     return this.store
       .usage()
       .filter((u) => localDay(new Date(u.ts), this.cfg.timezone) === today)
+      .filter((u) => !provider || modelInfo(u.model).provider === provider)
       .reduce((s, u) => s + u.cost, 0);
   }
 
-  /** Throws BudgetExceeded when today's spend has reached the hard cap. */
-  checkBudget() {
-    const cap = this.cfg.billing.capUsd;
-    if (cap === null) return;
-    const spent = this.spentToday();
-    if (spent >= cap) {
+  /**
+   * Throws BudgetExceeded when today's spend has reached the overall cap, or the cap of the provider about to
+   * be used (by default the selected model's provider).
+   */
+  checkBudget(provider: ProviderName = modelInfo(this.model).provider) {
+    const total = this.cfg.billing.capUsd;
+    if (total !== null && this.spentToday() >= total) {
       throw new BudgetExceeded(
-        `🛑 Daily spending cap reached: $${spent.toFixed(4)} of $${cap.toFixed(2)}.\n` +
+        `🛑 Daily spending cap reached: $${this.spentToday().toFixed(4)} of $${total.toFixed(2)}.\n` +
           'AI features are paused to protect your wallet and unlock again at midnight. Commands like /todo and /stats still work.',
+      );
+    }
+    const cap = this.cfg.billing.providers[provider].capUsd;
+    const spent = this.spentToday(provider);
+    if (cap !== null && spent >= cap) {
+      const other: ProviderName = provider === 'gemini' ? 'claude' : 'gemini';
+      const canSwitch = this.hasProvider(other) && modelInfo(this.model).provider === provider;
+      throw new BudgetExceeded(
+        `🛑 ${PROVIDER_NAMES[provider]}'s daily cap reached: $${spent.toFixed(4)} of $${cap.toFixed(2)}. ${PROVIDER_NAMES[provider]} is paused until midnight.` +
+          (canSwitch ? `\nYou can switch to ${PROVIDER_NAMES[other]} in /settings meanwhile.` : '') +
+          (provider === 'gemini' ? '\n(Voice notes and spoken replies always use Gemini.)' : ''),
       );
     }
   }
 
-  /** A one-time-per-day warning once spend passes DAILY_WARNING_LIMIT_USD. */
+  /** One-time-per-day warnings once spend passes the overall or a provider's warning level. */
   private budgetFooter(): string {
-    const warn = this.cfg.billing.warnUsd;
-    if (warn === null) return '';
-    const spent = this.spentToday();
     const today = localDay(this.now(), this.cfg.timezone);
-    if (spent < warn || this.store.ranOn('billing-warning') === today) return '';
-    this.store.markRan('billing-warning', today);
-    const cap = this.cfg.billing.capUsd;
-    return `\n\n⚠️ Billing warning: today's AI spend is $${spent.toFixed(4)} (warning at $${warn.toFixed(2)}${cap !== null ? `, hard cap $${cap.toFixed(2)}` : ''}).`;
+    const b = this.cfg.billing;
+    const checks: [string, string, number | null, number | null, number][] = [
+      ['billing-warning', "today's AI spend", b.warnUsd, b.capUsd, this.spentToday()],
+      ...(Object.keys(b.providers) as ProviderName[]).map(
+        (p): [string, string, number | null, number | null, number] => [
+          `billing-warning:${p}`,
+          `${PROVIDER_NAMES[p]} today`,
+          b.providers[p].warnUsd,
+          b.providers[p].capUsd,
+          this.spentToday(p),
+        ],
+      ),
+    ];
+    const lines: string[] = [];
+    for (const [key, label, warn, cap, spent] of checks) {
+      if (warn === null || spent < warn || this.store.ranOn(key) === today) continue;
+      this.store.markRan(key, today);
+      lines.push(`⚠️ Billing warning: ${label} is $${spent.toFixed(4)} (warning at $${warn.toFixed(2)}${cap !== null ? `, cap $${cap.toFixed(2)}` : ''}).`);
+    }
+    return lines.length ? `\n\n${lines.join('\n')}` : '';
   }
 
   private provider(): Provider {

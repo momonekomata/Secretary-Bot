@@ -27,8 +27,10 @@ const QUESTIONS = [
   ['PUBLIC_URL', 'Public https address of the bot, for LINE (Enter to skip; see SETUP-GUIDE.md Part 5)', { onlyIf: 'LINE_CHANNEL_SECRET' }],
   ['GOOGLE_MAPS_API_KEY', 'Google Maps API key for places and travel times (Enter to skip)', { secret: true }],
   ['BOT_NOTIFY_CHATS', 'Chat for morning briefings and alerts, from /id, e.g. telegram:123456789 (Enter to skip for now)', {}],
-  ['DAILY_WARNING_LIMIT_USD', 'Daily AI spend warning, in US dollars', { def: '0.50' }],
-  ['DAILY_HARD_LIMIT_USD', 'Daily AI spend hard cap, in US dollars (the AI pauses until midnight)', { def: '1.50' }],
+  ['GEMINI_DAILY_WARNING_LIMIT_USD', 'Gemini: daily spend warning, in US dollars', { def: '0.20', onlyIf: 'GEMINI_API_KEY' }],
+  ['GEMINI_DAILY_HARD_LIMIT_USD', 'Gemini: daily hard cap, in US dollars (Gemini pauses until midnight)', { def: '0.30', onlyIf: 'GEMINI_API_KEY' }],
+  ['CLAUDE_DAILY_WARNING_LIMIT_USD', 'Claude: daily spend warning, in US dollars', { def: '2.50', onlyIf: 'ANTHROPIC_API_KEY' }],
+  ['CLAUDE_DAILY_HARD_LIMIT_USD', 'Claude: daily hard cap, in US dollars (Claude pauses until midnight)', { def: '3.00', onlyIf: 'ANTHROPIC_API_KEY' }],
   ['WANIKANI_TOKEN', 'WaniKani API token (Enter to skip)', { secret: true }],
 ];
 

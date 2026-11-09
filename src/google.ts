@@ -485,15 +485,43 @@ export class Google {
   }
 
   /** Streams a Drive file to disk (for big files such as a Samsung Health export). */
-  async downloadToFile(fileId: string, path: string): Promise<number> {
+  async downloadToFile(
+    fileId: string,
+    path: string,
+    opts: { onProgress?: (bytes: number, total: number | null) => void; idleTimeoutMs?: number } = {},
+  ): Promise<number> {
     const { createWriteStream } = await import('node:fs');
     const { Readable } = await import('node:stream');
     const { pipeline } = await import('node:stream/promises');
-    const res = await this.request(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`);
-    if (!res.body) throw new Error('Empty download');
-    const out = createWriteStream(path);
-    await pipeline(Readable.fromWeb(res.body as import('node:stream/web').ReadableStream), out);
-    return out.bytesWritten;
+    const abort = new AbortController();
+    const idle = opts.idleTimeoutMs ?? 120_000;
+    let timer = setTimeout(() => abort.abort(), idle);
+    try {
+      const res = await this.request(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`, { signal: abort.signal });
+      if (!res.body) throw new Error('Empty download');
+      const total = Number(res.headers.get('content-length')) || null;
+      let bytes = 0;
+      // Counts bytes for progress, and gives up when no data arrives for `idle` ms.
+      const counted = (res.body as import('node:stream/web').ReadableStream<Uint8Array>).pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({
+          transform(chunk, controller) {
+            bytes += chunk.byteLength;
+            clearTimeout(timer);
+            timer = setTimeout(() => abort.abort(), idle);
+            opts.onProgress?.(bytes, total);
+            controller.enqueue(chunk);
+          },
+        }) as unknown as import('node:stream/web').TransformStream<Uint8Array, Uint8Array>,
+      );
+      // The signal also tears the streams down on a stall, whether or not the network layer reacts to it.
+      await pipeline(Readable.fromWeb(counted), createWriteStream(path), { signal: abort.signal });
+      return bytes;
+    } catch (e) {
+      if (abort.signal.aborted) throw new Error(`The download from Google Drive stalled (no data for ${Math.round(idle / 1000)} s).`);
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   // --- Docs ---

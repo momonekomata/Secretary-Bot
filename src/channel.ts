@@ -1,4 +1,4 @@
-import type { Agent, IncomingImage } from './agent';
+import { BudgetExceeded, type Agent, type IncomingImage } from './agent';
 import type { Briefings } from './briefings';
 import { runCommand, SLOW_COMMANDS, type Button, type CommandReply } from './commands';
 import type { Config } from './config';
@@ -65,7 +65,7 @@ export interface IncomingMessage {
 
 /** A short message for the user when handling their message failed. */
 export function friendlyError(e: unknown): string {
-  if (e instanceof UserFacingError) return e.message;
+  if (e instanceof UserFacingError || e instanceof BudgetExceeded) return e.message;
   const status = (e as { status?: number }).status;
   if (status === 429) return 'The AI service is rate limiting me right now. Try again in a minute.';
   if (status === 401 || status === 403) return 'My AI API key was rejected. Check GEMINI_API_KEY / ANTHROPIC_API_KEY on the bot.';
@@ -101,7 +101,26 @@ export class Secretary {
 
   /** Returns the reply to send, or null to stay silent. */
   async handle(m: IncomingMessage): Promise<CommandReply | null> {
+    try {
+      return await this.route(m);
+    } catch (e) {
+      // A spending cap is an answer, not an error.
+      if (e instanceof BudgetExceeded) return { text: e.message };
+      throw e;
+    }
+  }
+
+  private notifier: ((chatKey: string, text: string) => Promise<void>) | null = null;
+
+  /** Lets background jobs post to a chat (set once the channels exist). */
+  setNotifier(fn: (chatKey: string, text: string) => Promise<void>) {
+    this.notifier = fn;
+  }
+
+  private async route(m: IncomingMessage): Promise<CommandReply | null> {
+    const notifier = this.notifier;
     const ctx = {
+      notify: notifier ? (text: string) => notifier(m.chatKey, text) : undefined,
       chatKey: m.chatKey,
       userId: m.userId,
       agent: this.agent,
@@ -174,7 +193,7 @@ export class Secretary {
     if (!this.gemini) return null;
     const spoken = speakable(text);
     if (!spoken) return null;
-    this.agent.checkBudget();
+    this.agent.checkBudget('gemini');
     const s = this.store.settings();
     const prompt = s.speakingStyle ? `Say ${s.speakingStyle}: ${spoken}` : spoken;
     return synthesize(this.gemini, this.cfg.ttsModel, s.ttsVoice ?? this.cfg.ttsVoice, prompt, (u) => this.agent.recordUsage(u, 'speech'));
@@ -182,7 +201,7 @@ export class Secretary {
 
   private async voice(m: IncomingMessage): Promise<{ text: string; reply?: string }> {
     if (!this.gemini) return { text: '🎙️ Voice notes need a Gemini API key (GEMINI_API_KEY), even when chatting with Claude.' };
-    this.agent.checkBudget();
+    this.agent.checkBudget('gemini');
     const translateTo = this.briefings.translateTo();
     const audio = await toGeminiAudio(m.audio!);
     const t = await transcribe(this.gemini, this.cfg.voiceModel, audio, translateTo, (u) => this.agent.recordUsage(u, 'voice'));

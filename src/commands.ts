@@ -11,7 +11,7 @@ import type { Reviews } from './review';
 import { localDay } from './time';
 import { weatherText } from './tools';
 import { formatDay as formatWatchDay } from './healthsync';
-import { formatReport, importFromDrive } from './samsungexport';
+import { formatReport, healthImport, importFromDrive } from './samsungexport';
 import type { Store } from './store';
 import { geocode } from './weather';
 
@@ -40,6 +40,8 @@ export interface CommandContext {
   status: () => Promise<string>;
   japanese?: JapaneseDaily;
   reviews?: Reviews;
+  /** Sends a message to this chat later (for background jobs). */
+  notify?: (text: string) => Promise<void>;
   now?: () => Date;
 }
 
@@ -348,8 +350,14 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
       }
       case '/healthimport': {
         if (!google?.has('drive')) return needGoogle();
-        const report = await importFromDrive(google, agent.health.db, cfg.timezone);
-        return { text: formatReport(report, agent.health.db.size) };
+        if (arg === 'status' || healthImport.running) return { text: healthImport.status() };
+        const db = agent.health.db;
+        const run = async (progress: (m: string) => void) => formatReport(await importFromDrive(google, db, cfg.timezone, { progress }), db.size);
+        if (!ctx.notify) return { text: await run(() => undefined) };
+        healthImport.start(run, ctx.notify);
+        return {
+          text: "📦 Started importing your Samsung Health export. It takes a few minutes; I'll post progress here, and you can keep chatting meanwhile. Check on it any time with /healthimport status.",
+        };
       }
 
       // --- weather ---

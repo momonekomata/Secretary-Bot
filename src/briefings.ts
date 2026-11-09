@@ -6,6 +6,7 @@ import type { Config } from './config';
 import { formatEmails, formatEvents, formatTasks } from './google';
 import { fetchNews, formatNews } from './news';
 import type { Store, UsageRow } from './store';
+import { modelInfo } from './models';
 import { localClock } from './time';
 import { bodyNumbers } from './health';
 import { formatDay as formatWatchDay } from './healthsync';
@@ -164,10 +165,16 @@ export function usageStats(rows: UsageRow[], timeZone: string, now: Date): strin
     byModel.set(u.model, m);
   }
   const fmt = (n: number) => n.toLocaleString('en-US');
+  const byProvider = (rs: UsageRow[]) =>
+    (['gemini', 'claude'] as const)
+      .map((p) => [p === 'gemini' ? 'Gemini' : 'Claude', sum(rs.filter((u) => modelInfo(u.model).provider === p))] as const)
+      .filter(([, cost]) => cost > 0)
+      .map(([name, cost]) => `${name} $${cost.toFixed(4)}`)
+      .join(', ');
   return [
     '📊 AI usage and estimated cost',
-    `Today: $${sum(todayRows).toFixed(4)} (${todayRows.length} calls)`,
-    `This month: $${sum(monthRows).toFixed(4)} (${monthRows.length} calls)`,
+    `Today: $${sum(todayRows).toFixed(4)} (${todayRows.length} calls)${todayRows.length ? ` · ${byProvider(todayRows)}` : ''}`,
+    `This month: $${sum(monthRows).toFixed(4)} (${monthRows.length} calls)${monthRows.length ? ` · ${byProvider(monthRows)}` : ''}`,
     `Kept in log: $${sum(rows).toFixed(4)} (${rows.length} calls)`,
     '',
     'This month by model:',
