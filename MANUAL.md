@@ -371,6 +371,8 @@ Rules that apply to every reply, in every personality and roleplay:
 - `/prefs add Use emoji`
 - `/prefs` to see them, `/prefs remove 2` to remove one, `/prefs clear` to remove all.
 - Or just say "from now on, keep answers short"; the bot saves it itself.
+- **WaniKani reviews** use fixed messages (no AI, so they stay free). They switch to Thai when one of your preferences asks for Thai. Answers are still the English meanings WaniKani grades, and its 💡 mnemonics stay in English.
+- Other command replies (`/budget`, `/food`, `/limit`, `/todo`…) are fixed English text; everything the AI writes follows your preferences.
 
 ### 13.3 Roleplay and companion chat
 `/roleplay` offers these scenes, or `/roleplay <describe your own>`:

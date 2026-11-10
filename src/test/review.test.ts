@@ -173,3 +173,29 @@ describe('kanji and word of the day as reviews', () => {
     expect(store.japaneseHistory()).toEqual({ kanji: ['語'], words: ['言語'] });
   });
 });
+
+describe('reviews in Thai', () => {
+  it('follow a standing preference for Thai, without using the AI', async () => {
+    const { reviewLang } = await import('../review');
+    expect(reviewLang(['Always reply in Thai'])).toBe('th');
+    expect(reviewLang(['ตอบเป็นภาษาไทยเสมอ', 'Use emoji'])).toBe('th');
+    expect(reviewLang(['Use emoji'])).toBe('en');
+
+    const store = new Store(null);
+    store.updateSettings({ preferences: ['Always reply in Thai'] });
+    const { api, submitted } = fakeApi([subject({})]);
+    const reviews = new Reviews(testConfig({ wanikaniToken: 't' }), store, api, () => 0);
+
+    const start = await reviews.start('c');
+    expect(start).toBe('🈁 รีวิว WaniKani: 1 จาก 1 ข้อที่ถึงกำหนด คำตอบจะนับใน WaniKani ด้วย พิมพ์ /review stop เพื่อพัก\n\n1/1 · คันจิ: 語\nคันจินี้แปลว่าอะไร? (ตอบเป็นภาษาอังกฤษ)');
+    expect(await reviews.answer('c', 'ご')).toBe('นั่นคือคำอ่านนะ 🙂 ข้อนี้ถามความหมาย\n\n1/1 · คันจิ: 語\nคันจินี้แปลว่าอะไร? (ตอบเป็นภาษาอังกฤษ)');
+    const wrong = await reviews.answer('c', 'speech');
+    expect(wrong).toContain('❌ 語 แปลว่า “Language”\n💡 Five mouths speaking a language.');
+    expect(await reviews.answer('c', 'language')).toBe("✅ ถูกต้อง!\n\n1/1 · คันจิ: 語\nคันจินี้อ่านว่าอะไร? (พิมพ์คานะหรือโรมาจิ · WaniKani ต้องการ on'yomi)");
+    const done = await reviews.answer('c', 'go');
+    expect(done).toContain('✅ ご');
+    expect(done).toContain('🎉 เสร็จแล้ว! รีวิวไป 1 ข้อ ถูกตั้งแต่ครั้งแรก 0 ข้อ อัปเดต WaniKani เรียบร้อย');
+    expect(submitted).toEqual([{ id: 100, wm: 1, wr: 0 }]);
+    expect(reviews.stop('c')).toBe('ไม่มีรีวิวที่กำลังทำอยู่');
+  });
+});

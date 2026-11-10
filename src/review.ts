@@ -81,7 +81,62 @@ export function gradeReading(answer: string, s: WkSubject): ReadingGrade {
   return candidates.some((c) => others.includes(c)) ? 'other-reading' : 'wrong';
 }
 
-const KIND: Record<WkSubject['object'], string> = { radical: 'Radical', kanji: 'Kanji', vocabulary: 'Vocabulary', kana_vocabulary: 'Vocabulary' };
+/** Review messages are fixed text (no AI, so reviews stay free), in English or Thai. */
+export type ReviewLang = 'en' | 'th';
+
+/** Thai when a standing preference asks for it (e.g. "Always reply in Thai", "ตอบเป็นภาษาไทย"). */
+export function reviewLang(preferences: string[] = []): ReviewLang {
+  return preferences.some((p) => /\bthai\b|ไทย/i.test(p)) ? 'th' : 'en';
+}
+
+const TEXT = {
+  en: {
+    kind: { radical: 'Radical', kanji: 'Kanji', vocabulary: 'Vocabulary', kana_vocabulary: 'Vocabulary' } as Record<WkSubject['object'], string>,
+    notConnected: 'WaniKani is not connected. Add WANIKANI_TOKEN to the bot (see SETUP-GUIDE.md).',
+    inProgress: "You're in the middle of a review.",
+    noneDue: '🎉 No WaniKani reviews are due right now.',
+    started: (n: number, due: number) => `🈁 WaniKani review: ${n} of ${due} due. Answers count on WaniKani. /review stop to pause.`,
+    noReview: 'No review is running.',
+    noReviewStart: 'No review is running. Start one with /review.',
+    stopped: (done: number, left: number) => `⏸️ Review stopped. ${done} item(s) were sent to WaniKani; the ${left} unfinished one(s) stay due there.`,
+    askMeaning: (kind: string) => `${kind} meaning? (English)`,
+    askReading: (kind: string, want: string) => `${kind} reading? (kana or romaji${want ? `; WaniKani wants the ${want}` : ''})`,
+    reading: 'reading',
+    gaveReading: "That's the reading 🙂 I asked for the meaning.",
+    gaveMeaning: "That's the meaning 🙂 I asked for the reading.",
+    typeKana: 'Type the reading in kana or romaji, e.g. "gengo" or "げんご".',
+    otherReading: (chars: string, want: string) => `That's a reading of ${chars}, but WaniKani wants the ${want} here. Try again.`,
+    wrongMeaning: (chars: string, ans: string) => `❌ ${chars} means “${ans}”.`,
+    wrongReading: (chars: string, ans: string) => `❌ ${chars} is read “${ans}”.`,
+    close: (m: string) => `✅ Close enough: “${m}”.`,
+    correct: '✅ Correct!',
+    notSent: '(Not sent to WaniKani: the token cannot submit reviews.)',
+    done: (done: number, first: number, synced: boolean) => `🎉 Done! ${done} item(s) reviewed, ${first} right first time.${synced ? ' WaniKani is up to date.' : ''}`,
+  },
+  th: {
+    kind: { radical: 'ราก (radical)', kanji: 'คันจิ', vocabulary: 'คำศัพท์', kana_vocabulary: 'คำศัพท์' } as Record<WkSubject['object'], string>,
+    notConnected: 'ยังไม่ได้เชื่อมต่อ WaniKani ต้องใส่ WANIKANI_TOKEN ให้บอทก่อนนะ (ดู SETUP-GUIDE.md)',
+    inProgress: 'ตอนนี้กำลังรีวิวค้างอยู่นะ',
+    noneDue: '🎉 ตอนนี้ไม่มีรีวิว WaniKani ค้างอยู่เลย',
+    started: (n: number, due: number) => `🈁 รีวิว WaniKani: ${n} จาก ${due} ข้อที่ถึงกำหนด คำตอบจะนับใน WaniKani ด้วย พิมพ์ /review stop เพื่อพัก`,
+    noReview: 'ไม่มีรีวิวที่กำลังทำอยู่',
+    noReviewStart: 'ไม่มีรีวิวที่กำลังทำอยู่ เริ่มได้ด้วย /review',
+    stopped: (done: number, left: number) => `⏸️ หยุดรีวิวแล้ว ส่งไป WaniKani แล้ว ${done} ข้อ อีก ${left} ข้อที่ยังไม่เสร็จจะยังค้างอยู่ใน WaniKani`,
+    askMeaning: (kind: string) => `${kind}นี้แปลว่าอะไร? (ตอบเป็นภาษาอังกฤษ)`,
+    askReading: (kind: string, want: string) => `${kind}นี้อ่านว่าอะไร? (พิมพ์คานะหรือโรมาจิ${want ? ` · WaniKani ต้องการ ${want}` : ''})`,
+    reading: 'คำอ่าน',
+    gaveReading: 'นั่นคือคำอ่านนะ 🙂 ข้อนี้ถามความหมาย',
+    gaveMeaning: 'นั่นคือความหมายนะ 🙂 ข้อนี้ถามคำอ่าน',
+    typeKana: 'พิมพ์คำอ่านเป็นคานะหรือโรมาจิ เช่น "gengo" หรือ "げんご"',
+    otherReading: (chars: string, want: string) => `นั่นเป็นคำอ่านหนึ่งของ ${chars} แต่ข้อนี้ WaniKani ต้องการ ${want} ลองอีกครั้งนะ`,
+    wrongMeaning: (chars: string, ans: string) => `❌ ${chars} แปลว่า “${ans}”`,
+    wrongReading: (chars: string, ans: string) => `❌ ${chars} อ่านว่า “${ans}”`,
+    close: (m: string) => `✅ ใกล้เคียงพอ: “${m}”`,
+    correct: '✅ ถูกต้อง!',
+    notSent: '(ไม่ได้ส่งไป WaniKani: token นี้ส่งผลรีวิวไม่ได้)',
+    done: (done: number, first: number, synced: boolean) => `🎉 เสร็จแล้ว! รีวิวไป ${done} ข้อ ถูกตั้งแต่ครั้งแรก ${first} ข้อ${synced ? ' อัปเดต WaniKani เรียบร้อย' : ''}`,
+  },
+};
 
 export function toReviewItem(assignmentId: number, srsStage: number, subject: WkSubject, card?: string): ReviewItem {
   const reads = subject.object === 'kanji' || subject.object === 'vocabulary';
@@ -96,6 +151,11 @@ export class Reviews {
     private readonly api: WaniKaniApi = { due: dueAssignments, subjects: fetchSubjectsByIds, submit: submitReview },
     private readonly random: () => number = Math.random,
   ) {}
+
+  /** Message texts in the language the user's standing preferences ask for. */
+  private get t() {
+    return TEXT[reviewLang(this.store.settings().preferences)];
+  }
 
   get enabled(): boolean {
     return !!this.cfg.wanikaniToken;
@@ -136,36 +196,35 @@ export class Reviews {
 
   /** /review: pulls due reviews (up to `limit`) and asks the first one. */
   async start(chatKey: string, limit = 10): Promise<string> {
-    if (!this.enabled) return 'WaniKani is not connected. Add WANIKANI_TOKEN to the bot (see SETUP-GUIDE.md).';
-    if (this.active(chatKey)) return `You're in the middle of a review.\n\n${this.question(this.store.review(chatKey)!)}`;
+    const t = this.t;
+    if (!this.enabled) return t.notConnected;
+    if (this.active(chatKey)) return `${t.inProgress}\n\n${this.question(this.store.review(chatKey)!)}`;
     const due = await this.dueItems();
-    if (!due.length) return '🎉 No WaniKani reviews are due right now.';
+    if (!due.length) return t.noneDue;
     // Lower SRS stages first (they matter most), shuffled within the batch.
     const batch = this.shuffle(due.sort((a, b) => a.srsStage - b.srsStage).slice(0, Math.min(50, Math.max(1, limit))));
-    return `🈁 WaniKani review: ${batch.length} of ${due.length} due. Answers count on WaniKani. /review stop to pause.\n\n${this.begin(chatKey, batch)}`;
+    return `${t.started(batch.length, due.length)}\n\n${this.begin(chatKey, batch)}`;
   }
 
   stop(chatKey: string): string {
     const s = this.store.review(chatKey);
     this.store.setReview(chatKey, null);
-    if (!s?.queue.length) return 'No review is running.';
-    return `⏸️ Review stopped. ${s.done} item(s) were sent to WaniKani; the ${s.queue.length} unfinished one(s) stay due there.`;
+    if (!s?.queue.length) return this.t.noReview;
+    return this.t.stopped(s.done, s.queue.length);
   }
 
   private question(s: ReviewSession): string {
     const item = s.queue[0];
     if (!item) return '';
-    const kind = KIND[item.subject.object];
-    const what =
-      item.ask === 'meaning'
-        ? 'meaning? (English)'
-        : `reading? (kana or romaji${item.subject.object === 'kanji' ? `; WaniKani wants the ${this.readingType(item.subject)}` : ''})`;
-    return `${s.done + 1}/${s.total} · ${kind}: ${item.subject.characters}\n${kind} ${what}`;
+    const t = this.t;
+    const kind = t.kind[item.subject.object];
+    const what = item.ask === 'meaning' ? t.askMeaning(kind) : t.askReading(kind, item.subject.object === 'kanji' ? this.readingType(item.subject) : '');
+    return `${s.done + 1}/${s.total} · ${kind}: ${item.subject.characters}\n${what}`;
   }
 
   private readingType(s: WkSubject): string {
     const t = s.readings.find((r) => r.primary)?.type;
-    return t === 'onyomi' ? "on'yomi" : t === 'kunyomi' ? "kun'yomi" : t === 'nanori' ? 'nanori' : 'reading';
+    return t === 'onyomi' ? "on'yomi" : t === 'kunyomi' ? "kun'yomi" : t === 'nanori' ? 'nanori' : this.t.reading;
   }
 
   private answerText(item: ReviewItem, part: 'meaning' | 'reading'): string {
@@ -181,32 +240,33 @@ export class Reviews {
   async answer(chatKey: string, text: string): Promise<string> {
     const s = this.store.review(chatKey);
     const item = s?.queue[0];
-    if (!s || !item) return 'No review is running. Start one with /review.';
+    const t = this.t;
+    if (!s || !item) return t.noReviewStart;
     const part = item.ask;
     const lines: string[] = [];
 
     if (part === 'meaning') {
       if (isKana(text) && gradeReading(text, item.subject) === 'correct') {
-        return `That's the reading 🙂 I asked for the meaning.\n\n${this.question(s)}`;
+        return `${t.gaveReading}\n\n${this.question(s)}`;
       }
       const g = gradeMeaning(text, item.subject);
       if (g === 'wrong') {
         item.wrongMeaning++;
-        lines.push(`❌ ${item.subject.characters} means “${this.answerText(item, 'meaning')}”.${item.subject.meaningMnemonic ? `\n💡 ${shorten(item.subject.meaningMnemonic)}` : ''}`);
+        lines.push(`${t.wrongMeaning(item.subject.characters, this.answerText(item, 'meaning'))}${item.subject.meaningMnemonic ? `\n💡 ${shorten(item.subject.meaningMnemonic)}` : ''}`);
       } else {
-        lines.push(g === 'close' ? `✅ Close enough: “${item.subject.meanings[0]}”.` : '✅ Correct!');
+        lines.push(g === 'close' ? t.close(item.subject.meanings[0]) : t.correct);
         item.needMeaning = false;
       }
     } else {
       const g = gradeReading(text, item.subject);
       if (g === 'not-kana') {
-        if (gradeMeaning(text, item.subject) !== 'wrong') return `That's the meaning 🙂 I asked for the reading.\n\n${this.question(s)}`;
-        return `Type the reading in kana or romaji, e.g. "gengo" or "げんご".\n\n${this.question(s)}`;
+        if (gradeMeaning(text, item.subject) !== 'wrong') return `${t.gaveMeaning}\n\n${this.question(s)}`;
+        return `${t.typeKana}\n\n${this.question(s)}`;
       }
-      if (g === 'other-reading') return `That's a reading of ${item.subject.characters}, but WaniKani wants the ${this.readingType(item.subject)} here. Try again.`;
+      if (g === 'other-reading') return t.otherReading(item.subject.characters, this.readingType(item.subject));
       if (g === 'wrong') {
         item.wrongReading++;
-        lines.push(`❌ ${item.subject.characters} is read “${this.answerText(item, 'reading')}”.${item.subject.readingMnemonic ? `\n💡 ${shorten(item.subject.readingMnemonic)}` : ''}`);
+        lines.push(`${t.wrongReading(item.subject.characters, this.answerText(item, 'reading'))}${item.subject.readingMnemonic ? `\n💡 ${shorten(item.subject.readingMnemonic)}` : ''}`);
       } else {
         lines.push(`✅ ${this.answerText(item, 'reading')}`);
         item.needReading = false;
@@ -218,7 +278,7 @@ export class Reviews {
       // Finished: send it to WaniKani.
       s.done++;
       if (!item.wrongMeaning && !item.wrongReading) s.firstTry++;
-      if (s.submitBlocked) lines.push('(Not sent to WaniKani: the token cannot submit reviews.)');
+      if (s.submitBlocked) lines.push(t.notSent);
       else {
         try {
           const stage = await this.api.submit(this.cfg.wanikaniToken, item.assignmentId, item.wrongMeaning, item.wrongReading);
@@ -239,7 +299,7 @@ export class Reviews {
 
     if (!s.queue.length) {
       this.store.setReview(chatKey, null);
-      lines.push('', `🎉 Done! ${s.done} item(s) reviewed, ${s.firstTry} right first time.${s.submitBlocked ? '' : ' WaniKani is up to date.'}`);
+      lines.push('', t.done(s.done, s.firstTry, !s.submitBlocked));
     } else {
       this.store.setReview(chatKey, s);
       lines.push('', this.question(s));
