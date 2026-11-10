@@ -42,7 +42,7 @@ export const MENU: [string, string, string][] = [
   ['name', 'Rename me', 'เปลี่ยนชื่อฉัน'],
   ['prefs', 'Your standing preferences', 'สิ่งที่คุณตั้งค่าไว้ให้ฉันทำเสมอ'],
   ['voice', 'When to answer with voice', 'เมื่อไหร่ให้ตอบเป็นเสียง'],
-  ['say', 'Say something out loud', 'พูดข้อความออกเสียง'],
+  ['say', 'Read aloud (reply to a message, or my last reply)', 'อ่านออกเสียง (ตอบกลับข้อความ หรือคำตอบล่าสุดของฉัน)'],
   ['voices', 'Hear voice samples and pick one', 'ฟังตัวอย่างเสียงแล้วเลือก'],
   ['voicestyle', 'How my voice speaks (cute, anime, calm…)', 'สไตล์การพูดของเสียง (น่ารัก อนิเมะ สงบ…)'],
   ['ttsvoice', 'Choose my speaking voice', 'เลือกเสียงพูดของฉัน'],
