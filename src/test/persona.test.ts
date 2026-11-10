@@ -88,11 +88,16 @@ describe('spoken replies: model fallback and voice choice', () => {
 
   it('does not hide other errors, and explains failures in plain words', async () => {
     const { Secretary, speechFailed } = await import('../channel');
-    const { generate } = fakeGemini([new Error('429 RESOURCE_EXHAUSTED: quota')]);
+    const tooMany = () => new Error('429 RESOURCE_EXHAUSTED: quota');
+    const { generate, calls } = fakeGemini([tooMany(), tooMany(), tooMany(), tooMany()]);
     const { store, cfg, agent, briefings } = setup();
     const s = new Secretary(cfg, store, agent, briefings, generate, async () => '');
+    s.wait = async () => undefined;
     const err = await s.speech('Hello').catch((e) => e);
-    expect(speechFailed(err)).toBe("🔇 I couldn't make the voice reply: the Gemini quota or credit ran out.");
+    expect(calls).toHaveLength(4); // tried, then 3 retries
+    expect(speechFailed(err)).toBe("🔇 I couldn't make the voice reply: too many voice requests in a minute (a Gemini rate limit). Try again in a minute.");
+    expect(speechFailed(new Error('429 Quota exceeded for metric: generate_requests_per_model_per_day'))).toMatch(/quota is used up; it resets tomorrow/);
+    expect(speechFailed(new Error('429 Your prepayment credits are depleted'))).toMatch(/credit ran out/);
     expect(speechFailed(new Error('ffmpeg is not installed'))).toBe("🔇 I couldn't make the voice reply: ffmpeg is missing on the server.");
   });
 

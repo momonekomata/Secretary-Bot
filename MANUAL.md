@@ -513,6 +513,7 @@ Edit `data/.env` on the NAS, then restart the container. Only the first group is
 | A feature says a key is missing | Add the key to `data/.env` and restart the container. |
 | "Daily limit reached" | A cost cap was hit; it resets at midnight, or raise it now with `/limit` (e.g. `/limit gemini 1`). |
 | Still blocked after raising the Gemini or Claude cap | The **all AI together** cap (from `DAILY_HARD_LIMIT_USD` in `.env`) also applies. The block message says which cap stopped it; send `/limit all 5` or `/limit all off`. |
+| "too many voice requests in a minute" | Gemini's speech model allows only a few requests per minute. The bot already waits and retries; if it still happens, wait a minute and try again. It is not your credit. |
 | No voice, or "🔇 I couldn't make the voice reply" | The message gives the reason. Voice uses Gemini (GEMINI_API_KEY) even when chatting with Claude. Try `/say hello`; `/status` shows the speech model in use. |
 | A slip or food was logged wrong | Tell it ("that was rent, not transfer"), or use `/budget edit`, `/budget remove`, `/food remove`. |
 | Health import shows 0 days | Send the import report to the developer; it lists the columns found in each file. |

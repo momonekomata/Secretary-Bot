@@ -97,9 +97,13 @@ export function speechFailed(e: unknown): string {
       ? t('Gemini returned no audio.', 'Gemini ไม่ได้ส่งเสียงกลับมา')
       : /No Gemini speech model/i.test(raw)
         ? t('no Gemini speech model is available on your API key.', 'API key นี้ใช้โมเดลเสียงของ Gemini ไม่ได้เลย')
-        : /\b429\b|quota|RESOURCE_EXHAUSTED/i.test(raw)
-          ? t('the Gemini quota or credit ran out.', 'โควตาหรือเครดิต Gemini หมด')
-          : raw.slice(0, 200);
+        : /prepay|credits? (are )?depleted|billing/i.test(raw)
+          ? t('the Gemini credit ran out (top up in Google AI Studio → Billing).', 'เครดิต Gemini หมด (เติมได้ที่ Google AI Studio → Billing)')
+          : /per.?day|PerDay|daily/i.test(raw)
+            ? t("today's Gemini speech quota is used up; it resets tomorrow.", 'โควตาเสียงของ Gemini วันนี้หมดแล้ว จะรีเซ็ตพรุ่งนี้')
+            : /\b429\b|quota|RESOURCE_EXHAUSTED|too many requests/i.test(raw)
+              ? t('too many voice requests in a minute (a Gemini rate limit). Try again in a minute.', 'ขอเสียงถี่เกินไปในหนึ่งนาที (Gemini จำกัดอัตรา) ลองใหม่อีกครั้งในอีกสักครู่')
+              : raw.slice(0, 200);
   return `🔇 ${t("I couldn't make the voice reply", 'สร้างเสียงตอบกลับไม่ได้')}: ${reason}`;
 }
 
@@ -275,12 +279,12 @@ export class Secretary {
         const record = (u: Usage) => this.agent.recordUsage(u, 'speech');
         let speech: Speech | null;
         try {
-          speech = await synthesize(gemini, model, voice, text, record, styleNow);
+          speech = await this.paced(() => synthesize(gemini, model, voice, text, record, styleNow));
         } catch (e) {
           // If the API doesn't take the separate style field, speak without a style rather than reading it aloud.
           if (!styleNow || !styleRejected(e)) throw e;
           this.styleOff = true;
-          speech = await synthesize(gemini, model, voice, text, record);
+          speech = await this.paced(() => synthesize(gemini, model, voice, text, record));
         }
         this.ttsModel = model;
         return speech;
@@ -305,6 +309,45 @@ export class Secretary {
       );
     } catch {
       // Diagnosis only.
+    }
+  }
+
+  /** At most this many speech requests at once, bot-wide (Gemini's speech model has a low per-minute limit). */
+  speechConcurrency = 2;
+  private speechActive = 0;
+  private speechQueue: (() => void)[] = [];
+  /** After a 429, no speech request starts before this time. */
+  private speechCooldownUntil = 0;
+  /** Waits (replaceable in tests). */
+  wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  now = () => Date.now();
+
+  /**
+   * Runs one speech request: no more than `speechConcurrency` at once, and on "too many requests" (429) it waits —
+   * as long as Google suggests, else 5, 10, then 20 s — and tries again (up to 3 times). A daily quota or empty
+   * credit isn't retried.
+   */
+  private async paced<T>(request: () => Promise<T>): Promise<T> {
+    if (this.speechActive >= this.speechConcurrency) await new Promise<void>((r) => this.speechQueue.push(r));
+    this.speechActive++;
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const until = this.speechCooldownUntil - this.now();
+        if (until > 0) await this.wait(until);
+        try {
+          return await request();
+        } catch (e) {
+          const msg = String((e as Error)?.message ?? e);
+          const rateLimited = /\b429\b|RESOURCE_EXHAUSTED|too many requests/i.test(msg) && !/per.?day|PerDay|daily|prepay|depleted|billing/i.test(msg);
+          if (!rateLimited || attempt >= 3) throw e;
+          const suggested = /retry(?:Delay)?["\s:=]+"?(\d+(?:\.\d+)?)s/i.exec(msg)?.[1];
+          const delay = Math.min(60_000, suggested ? Number(suggested) * 1000 + 500 : 5000 * 2 ** attempt);
+          this.speechCooldownUntil = Math.max(this.speechCooldownUntil, this.now() + delay);
+        }
+      }
+    } finally {
+      this.speechActive--;
+      this.speechQueue.shift()?.();
     }
   }
 
