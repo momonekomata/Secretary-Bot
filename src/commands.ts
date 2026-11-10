@@ -849,9 +849,18 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         store.updateSettings({ voiceReplies: mode as 'off' | 'voice-notes' | 'always' });
         return settingsView(ctx, t(`✅ Spoken replies: ${mode}.\n`, `✅ ตอบเป็นเสียง: ${mode}\n`));
       }
-      case '/say':
-        if (!arg) return { text: t('What should I say? e.g. /say おはようございます', 'ให้พูดว่าอะไรดี? เช่น /say おはようございます') };
-        return { text: '', speak: arg };
+      case '/say': {
+        if (arg) return { text: '', speak: arg };
+        // No text: read my last reply aloud.
+        const last = [...store.history(chatKey)].reverse().find((turn) => turn.role === 'assistant');
+        if (last) return { text: '', speak: last.text };
+        return {
+          text: t(
+            'What should I say? e.g. /say おはようございます\nTip: reply to any message with /say (or 🔊) and I read it aloud; /say on its own reads my last reply.',
+            'ให้พูดว่าอะไรดี? เช่น /say おはようございます\nเคล็ดลับ: ตอบกลับข้อความไหนก็ได้ด้วย /say (หรือ 🔊) แล้วฉันจะอ่านออกเสียงให้ ส่วน /say เฉยๆ จะอ่านคำตอบล่าสุดของฉัน',
+          ),
+        };
+      }
 
       // --- usage ---
       case '/stats':

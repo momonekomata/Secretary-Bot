@@ -155,3 +155,35 @@ describe('/voicestyle', () => {
     expect(store.settings().speakingStyle).toBeUndefined();
   });
 });
+
+describe('reading a message aloud', () => {
+  it('replying to a message with /say or 🔊 reads that message', async () => {
+    const { sayQuoted } = await import('../telegram');
+    const msg = (text: string, quoted?: string) => ({ message_id: 2, chat: { id: 1, type: 'private' }, text, ...(quoted ? { reply_to_message: { message_id: 1, chat: { id: 1, type: 'private' }, text: quoted } } : {}) });
+    expect(sayQuoted(msg('/say', 'คำว่า ありがとう แปลว่าขอบคุณ'))).toBe('/say คำว่า ありがとう แปลว่าขอบคุณ');
+    expect(sayQuoted(msg('🔊', 'Hello'))).toBe('/say Hello');
+    expect(sayQuoted(msg('/say@Runa_secretary_bot', 'Hi'))).toBe('/say Hi');
+    expect(sayQuoted(msg('what does this mean?', 'Hello'))).toBe('what does this mean?'); // a normal reply stays a normal message
+    expect(sayQuoted(msg('/say'))).toBe('/say');
+  });
+
+  it('/say on its own reads my last reply', async () => {
+    const { ctx, store } = setup();
+    store.appendExchange('telegram:1', 'hi', 'สวัสดีค่ะ วันนี้เรียนคำว่า 勉強 กันนะ', 10);
+    expect((await runCommand('/say', ctx))!.speak).toBe('สวัสดีค่ะ วันนี้เรียนคำว่า 勉強 กันนะ');
+    const fresh = setup();
+    expect((await runCommand('/say', fresh.ctx))!.text).toMatch(/reply to any message with \/say/);
+  });
+
+  it('works end to end on Telegram', async () => {
+    const seen: string[] = [];
+    vi.stubGlobal('fetch', async () => Response.json({ ok: true, result: {} }));
+    const secretary = { isSlow: () => false, handle: async (m: IncomingMessage) => (seen.push(m.text), null) } as unknown as Secretary;
+    const tg = new Telegram({ ...testConfig().telegram, token: 't' }, secretary, () => undefined);
+    await tg.handleUpdate({
+      update_id: 1,
+      message: { message_id: 5, chat: { id: 1, type: 'private' }, from: { id: 1 }, text: '/say', reply_to_message: { message_id: 4, chat: { id: 1, type: 'private' }, text: 'おはよう' } },
+    } as never);
+    expect(seen).toEqual(['/say おはよう']);
+  });
+});

@@ -32,6 +32,8 @@ interface TgMessage {
   audio?: TgFile;
   document?: TgFile;
   location?: { latitude: number; longitude: number };
+  /** The message this one replies to. */
+  reply_to_message?: TgMessage;
 }
 interface TgCallback {
   id: string;
@@ -52,6 +54,16 @@ const MAX_AUDIO_BYTES = 15 * 1024 * 1024;
 export function inlineKeyboard(buttons?: Button[][]) {
   if (!buttons?.length) return undefined;
   return { inline_keyboard: buttons.map((row) => row.map((b) => ({ text: b.label, callback_data: b.command.slice(0, 64) }))) };
+}
+
+/**
+ * The message text, except that replying to a message with just /say (or 🔊) asks to read that message aloud:
+ * it becomes "/say <the quoted text>".
+ */
+export function sayQuoted(msg: TgMessage): string {
+  const text = (msg.text ?? msg.caption ?? '').trim();
+  const quoted = (msg.reply_to_message?.text ?? msg.reply_to_message?.caption ?? '').trim();
+  return quoted && /^(\/say(@\w+)?|🔊)$/i.test(text) ? `/say ${quoted}` : text;
 }
 
 export class Telegram implements Channel {
@@ -274,7 +286,7 @@ export class Telegram implements Channel {
       chatKey: `telegram:${chatId}`,
       userId: String(msg.from.id),
       userName: msg.from.first_name,
-      text: (msg.text ?? msg.caption ?? '').trim(),
+      text: sayQuoted(msg),
     };
     const voice = msg.voice ?? msg.audio;
     if (msg.location) incoming.location = { lat: msg.location.latitude, lon: msg.location.longitude };
