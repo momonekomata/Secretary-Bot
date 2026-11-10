@@ -7,7 +7,7 @@ import { Channels, Secretary } from './channel';
 import { config } from './config';
 import { Google } from './google';
 import { anthropicCreate, ClaudeProvider } from './llm/claude';
-import { GeminiProvider, type GenerateContent } from './llm/gemini';
+import { GeminiProvider, type GenerateContent, geminiVoiceGenerate } from './llm/gemini';
 import { Line, verifyLineSignature } from './line';
 import { hasFfmpeg } from './audio';
 import { FileHost } from './files';
@@ -130,7 +130,9 @@ async function status(): Promise<string> {
   return lines.join('\n');
 }
 
-const secretary = new Secretary(config, store, agent, briefings, geminiGenerate, status, japanese, reviews);
+// Voice (speech and voice-note transcription) uses the v1beta API, which has the speech settings.
+const voiceGenerate = config.geminiKey ? geminiVoiceGenerate(config.geminiKey) : null;
+const secretary = new Secretary(config, store, agent, briefings, voiceGenerate, status, japanese, reviews);
 const channels = new Channels();
 const telegram = config.telegram.token ? new Telegram(config.telegram, secretary) : null;
 const files = new FileHost(config.publicUrl);
