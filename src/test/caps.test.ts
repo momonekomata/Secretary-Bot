@@ -89,7 +89,7 @@ describe('/limit: daily limits changed in chat', () => {
     expect((await run('/limit gemini 1'))!.text).toMatch(/^✅ Gemini cap: \$1\.00 a day\./);
     expect((await run('/limit gemini'))!.text).toContain('cap $1.00✏️');
     expect(await agent.reply({ chatKey: 'c', text: 'hi' })).toBe('from gemini');
-    expect(await agent.reply({ chatKey: 'c', text: 'again' })).toMatch(/^🛑 Gemini's daily cap reached: \$1\.0000 of \$1\.00\.[\s\S]*Change the limit with \/limit\.$/);
+    expect(await agent.reply({ chatKey: 'c', text: 'again' })).toMatch(/^🛑 Gemini's daily cap reached: \$1\.0000 of \$1\.00\.[\s\S]*To carry on now: \/limit gemini 2$/);
 
     // Raise it in chat and carry on, the same day.
     await run('/limit gemini $3');
@@ -115,5 +115,35 @@ describe('/limit: daily limits changed in chat', () => {
     expect((await run('/limit openai 3'))!.text).toMatch(/^"openai" isn't gemini, claude or all\./);
     expect(store.settings().limits).toBeUndefined();
     expect((await run('/limit gemini warn 9'))!.text).toContain("the warning $9.00 is not below the cap, so it won't show");
+  });
+});
+
+describe('the all-AI cap from .env still applies after raising a provider cap', () => {
+  it('says which cap stopped it, warns when raising the provider, and unblocks with /limit all', async () => {
+    const { runCommand } = await import('../commands');
+    const base = testConfig().billing;
+    // As in a first-setup .env: DAILY_WARNING_LIMIT_USD=0.20, DAILY_HARD_LIMIT_USD=0.30.
+    const cfg = testConfig({ billing: { ...base, priceOverrides: PRICES, warnUsd: 0.2, capUsd: 0.3 } });
+    const store = new Store(null);
+    const agent = new Agent(cfg, store, { gemini: dollarProvider('from gemini') }, null, () => NOW);
+    const briefings = new Briefings(cfg, store, agent, () => NOW);
+    const run = (t: string) => runCommand(t, { chatKey: 'c', userId: '1', agent, store, cfg, briefings, status: async () => '', now: () => NOW });
+
+    expect(await agent.reply({ chatKey: 'c', text: 'hi' })).toMatch(/^from gemini/); // spends $1
+    const blocked = await agent.reply({ chatKey: 'c', text: 'again' });
+    expect(blocked).toContain('🛑 Daily cap reached for all AI together: $1.0000 of $0.30 (from the .env file).');
+    expect(blocked).toContain('To carry on now, raise it with /limit all 1 or remove it with /limit all off.');
+
+    const raised = (await run('/limit gemini 5'))!;
+    expect(raised.text).toContain('✅ Gemini cap: $5.00 a day.\n⚠️ The cap for all AI together ($0.30) is already reached today');
+    expect(raised.text).toContain("⚠️ The cap for all AI together ($0.30) is lower than Gemini's ($5.00) and Claude's (off), so it applies first.");
+    const labels = raised.buttons!.map((row) => row.map((b) => b.label));
+    expect(labels[0]).toEqual(['Gemini $1', 'Gemini $2', '✅ $5', 'No cap']);
+    expect(labels[2]).toEqual(['All AI $1', 'All AI $3', 'All AI $5', 'No cap']);
+    expect(await agent.reply({ chatKey: 'c', text: 'still?' })).toMatch(/^🛑 Daily cap reached for all AI together/);
+
+    await run('/limit all off');
+    expect(await agent.reply({ chatKey: 'c', text: 'now' })).toMatch(/^from gemini/);
+    expect((await run('/limit'))!.text).not.toContain('applies first');
   });
 });

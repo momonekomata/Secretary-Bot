@@ -148,7 +148,7 @@ describe('Agent settings and spending', () => {
 
     expect(await agent.reply({ chatKey: 'c', text: '1' })).toBe('answer');
     expect(await agent.reply({ chatKey: 'c', text: '2' })).toMatch(/^answer\n\n⚠️ Billing warning: today's AI spend is \$1\.5000/);
-    expect(await agent.reply({ chatKey: 'c', text: '3' })).toMatch(/Daily spending cap reached/);
+    expect(await agent.reply({ chatKey: 'c', text: '3' })).toMatch(/^🛑 Daily cap reached for all AI together/);
     expect(requests).toHaveLength(2); // the third never reached the provider
     await expect(agent.generate('x', 'y', 'briefing')).rejects.toThrow(/cap reached/);
   });
