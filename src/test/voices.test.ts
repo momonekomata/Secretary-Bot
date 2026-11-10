@@ -124,3 +124,34 @@ describe('speaking style', () => {
     expect(calls[2].contents).toEqual([{ role: 'user', parts: [{ text: 'Again' }] }]);
   });
 });
+
+describe('/voicestyle', () => {
+  it('shows the style with ready-made choices, and sets a preset, your own words, or none', async () => {
+    const { ctx, store } = setup();
+    const view = (await runCommand('/voicestyle', ctx))!;
+    expect(view.text).toMatch(/^🎙️ Speaking style: none/);
+    expect(view.buttons!.flat().map((b) => b.command)).toEqual(['/voicestyle cute', '/voicestyle anime', '/voicestyle gentle', '/voicestyle energetic', '/voicestyle calm', '/voicestyle off']);
+    expect(view.buttons!.flat().every((b) => Buffer.byteLength(b.command) <= 64)).toBe(true); // Telegram button limit
+
+    const anime = (await runCommand('/voicestyle anime', ctx))!;
+    expect(store.settings().speakingStyle).toMatch(/^affectionate, loving and cheerful, yet a little shy; a high-pitched, sweet and melodic voice/);
+    expect(anime.speak).toBe(SAMPLE_LINE);
+    expect(anime.buttons!.flat().find((b) => b.label.startsWith('✅'))!.command).toBe('/voicestyle anime');
+
+    await runCommand('/style whispering softly, very shy', ctx);
+    expect(store.settings().speakingStyle).toBe('whispering softly, very shy');
+    expect((await runCommand('/voicestyle x', ctx))!.text).toMatch(/^Describe the style/);
+    await runCommand('/voicestyle off', ctx);
+    expect(store.settings().speakingStyle).toBeUndefined();
+  });
+
+  it('can be changed by asking in chat', async () => {
+    const { runTool } = await import('../tools');
+    const store = new Store(null);
+    const tctx = { chatKey: 'c', store, cfg: testConfig(), google: null, now: () => NOW };
+    expect((await runTool('voice_style_set', { style: 'shy and sweet, high-pitched' }, tctx)).content).toMatch(/^Spoken replies will now sound: shy and sweet/);
+    expect(store.settings().speakingStyle).toBe('shy and sweet, high-pitched');
+    await runTool('voice_style_set', { style: '' }, tctx);
+    expect(store.settings().speakingStyle).toBeUndefined();
+  });
+});

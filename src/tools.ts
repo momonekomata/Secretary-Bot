@@ -212,6 +212,14 @@ const MONEY_EMAIL: ToolSpec = {
   parameters: obj({ days: int('How many days back to look (1-365).') }),
 };
 
+const VOICE_STYLE: ToolSpec = {
+  name: 'voice_style_set',
+  description:
+    'Set how the spoken (voice) replies sound, when the user asks, e.g. "make your voice cuter", "speak softly", "sound like an anime girl". ' +
+    'Write the style in English as a short description of delivery (mood, pitch, pace). Empty text removes the style. This changes speech only, not your written replies.',
+  parameters: obj({ style: str('The speaking style in English, e.g. "shy and sweet, with a soft, high-pitched voice", or "" to remove it.') }),
+};
+
 const PREFERENCES: ToolSpec[] = [
   {
     name: 'preference_add',
@@ -372,7 +380,7 @@ const MAPS: ToolSpec[] = [
 
 export function toolSpecs(opts: { wanikani: boolean; google: Google | null; maps: boolean }): ToolSpec[] {
   const g = opts.google;
-  return [...CORE, ...PREFERENCES, ...MONEY, ...(g?.has('gmail') ? [MONEY_EMAIL] : []), ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : [])];
+  return [...CORE, ...PREFERENCES, VOICE_STYLE, ...MONEY, ...(g?.has('gmail') ? [MONEY_EMAIL] : []), ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : [])];
 }
 
 const STAGES = ['Lesson', 'Apprentice 1', 'Apprentice 2', 'Apprentice 3', 'Apprentice 4', 'Guru 1', 'Guru 2', 'Master', 'Enlightened', 'Burned'];
@@ -587,6 +595,11 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
         if (!ctx.extract) return fail('Email scanning is not available here.');
         const r = await scanEmail({ google: ctx.google, store: ctx.store, extract: ctx.extract }, ctx.chatKey, { days: Number(a.days) || 30, now, timeZone: tz });
         return ok(`${scanSummary(r)}\n${UNTRUSTED}`);
+      }
+      case 'voice_style_set': {
+        const style = s('style').slice(0, 300);
+        ctx.store.updateSettings({ speakingStyle: style || undefined });
+        return ok(style ? `Spoken replies will now sound: ${style}. (The user can hear it with /say or change it with /voicestyle.)` : 'Speaking style removed: the voice speaks naturally.');
       }
       case 'preference_add': {
         const text = s('text').slice(0, 200);
