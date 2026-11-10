@@ -97,7 +97,7 @@ describe('Telegram voice samples', () => {
       throw new Error('429 RESOURCE_EXHAUSTED');
     });
     await tg.handleUpdate(update);
-    expect(tries).toBe(hasFfmpeg() ? 3 : 0);
+    expect(tries).toBe(hasFfmpeg() ? 2 : 0); // the first batch (two samples) only
     expect(sent.at(-1)!.text).toMatch(/^Pick one:\n\n🔇 I couldn't make the voice reply: /);
   });
 });
@@ -185,5 +185,52 @@ describe('reading a message aloud', () => {
       message: { message_id: 5, chat: { id: 1, type: 'private' }, from: { id: 1 }, text: '/say', reply_to_message: { message_id: 4, chat: { id: 1, type: 'private' }, text: 'おはよう' } },
     } as never);
     expect(seen).toEqual(['/say おはよう']);
+  });
+});
+
+describe('Gemini speech rate limit', () => {
+  const clip = () => geminiRes([{ inlineData: { mimeType: 'audio/L16;rate=24000', data: Buffer.alloc(9600, 1).toString('base64') } }]);
+
+  it('waits as long as Google suggests after a 429, then retries, and pauses other requests too', async () => {
+    const { store, cfg, agent, briefings } = setup();
+    const limited = new Error('[429 Too Many Requests] Resource has been exhausted. {"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"12s"}');
+    const { generate, calls } = fakeGemini([limited, clip()]);
+    const s = new Secretary(cfg, store, agent, briefings, generate, async () => '');
+    let clock = 1_000_000;
+    const waits: number[] = [];
+    s.now = () => clock;
+    s.wait = async (ms) => {
+      waits.push(ms);
+      clock += ms;
+    };
+    expect(await s.speech('Hello')).toBeTruthy();
+    expect(calls).toHaveLength(2);
+    expect(waits).toEqual([12_500]);
+  });
+
+  it('runs at most two speech requests at once', async () => {
+    const { store, cfg, agent, briefings } = setup();
+    let active = 0;
+    let most = 0;
+    const generate = async () => {
+      active++;
+      most = Math.max(most, active);
+      await new Promise((r) => setTimeout(r, 5));
+      active--;
+      return clip();
+    };
+    const s = new Secretary(cfg, store, agent, briefings, generate as never, async () => '');
+    // Mixed Thai and Japanese: several pieces at once.
+    await Promise.all([s.speech('คำว่า ありがとう แปลว่า ขอบคุณ'), s.speech('สวัสดี こんにちは')]);
+    expect(most).toBe(2);
+  });
+
+  it('does not retry a daily quota or empty credit', async () => {
+    const { store, cfg, agent, briefings } = setup();
+    const { generate, calls } = fakeGemini([new Error('429 RESOURCE_EXHAUSTED: Quota exceeded for metric: requests per day')]);
+    const s = new Secretary(cfg, store, agent, briefings, generate, async () => '');
+    s.wait = async () => undefined;
+    await expect(s.speech('Hello')).rejects.toThrow(/per day/);
+    expect(calls).toHaveLength(1);
   });
 });

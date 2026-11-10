@@ -640,8 +640,8 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         rows.push([more ? { label: t('⬅️ The first 8', '⬅️ 8 เสียงแรก'), command: '/voices' } : { label: t('🎧 6 more voices', '🎧 ฟังอีก 6 เสียง'), command: '/voices more' }]);
         return {
           text: t(
-            `🎧 ${list.length} voice samples are on the way (about half a minute), each saying a Japanese and a Thai line in a cute style. Tap your favourite at the end. (About $0.01 of Gemini.)`,
-            `🎧 กำลังส่งตัวอย่าง ${list.length} เสียง (ประมาณครึ่งนาที) แต่ละเสียงพูดประโยคภาษาญี่ปุ่นและภาษาไทยแบบน่ารัก ฟังแล้วแตะเลือกเสียงที่ชอบท้ายสุดได้เลย (ค่า Gemini ประมาณ $0.01)`,
+            `🎧 ${list.length} voice samples are on the way (about a minute), each saying a Japanese and a Thai line in a cute style. Tap your favourite at the end. (About $0.01 of Gemini.)`,
+            `🎧 กำลังส่งตัวอย่าง ${list.length} เสียง (ประมาณหนึ่งนาที) แต่ละเสียงพูดประโยคภาษาญี่ปุ่นและภาษาไทยแบบน่ารัก ฟังแล้วแตะเลือกเสียงที่ชอบท้ายสุดได้เลย (ค่า Gemini ประมาณ $0.01)`,
           ),
           samples: {
             line: SAMPLE_LINE,

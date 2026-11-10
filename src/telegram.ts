@@ -133,12 +133,13 @@ export class Telegram implements Channel {
     if (reply.samples) await this.sendSamples(chatId, reply.samples);
   }
 
-  /** Voice samples: made three at a time, sent in order with captions, then the footer with its buttons. */
+  /** Voice samples: made two at a time, sent in order with captions, then the footer with its buttons. */
   private async sendSamples(chatId: string, samples: NonNullable<CommandReply['samples']>) {
     let failed = 0;
     let firstError: unknown = null;
-    for (let i = 0; i < samples.items.length; i += 3) {
-      const batch = samples.items.slice(i, i + 3);
+    // Two at a time: each sample is itself two requests (Japanese + Thai), and Gemini's speech limit is per minute.
+    for (let i = 0; i < samples.items.length; i += 2) {
+      const batch = samples.items.slice(i, i + 2);
       await this.call('sendChatAction', { chat_id: chatId, action: 'record_voice' }).catch(() => undefined);
       const made = await Promise.allSettled(
         batch.map(async (s) => {
