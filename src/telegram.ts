@@ -5,8 +5,8 @@ import type { Button, CommandReply } from './commands';
 import type { Config } from './config';
 import { hasFfmpeg, toOggOpus } from './audio';
 import { fileTooBig, MAX_FILE_BYTES, UserFacingError, voiceTooLong } from './documents';
-import { lang, type Lang } from './i18n';
-import { menuFor } from './menu';
+import { lang, t, type Lang } from './i18n';
+import { MENU, menuFor } from './menu';
 import type { AudioInput } from './voice';
 
 interface TgUser {
@@ -162,12 +162,26 @@ export class Telegram implements Channel {
   /** Language the "/" menu was last registered in. */
   private menuLang: Lang | null = null;
 
-  /** Fills Telegram's "/" command menu with every command, described in the user's language. */
-  private registerCommands() {
+  /**
+   * Fills Telegram's "/" command menu with every command, described in the user's language. It is set for private
+   * chats too: a menu set there earlier (e.g. with BotFather) would otherwise hide the bot's default one.
+   */
+  private async registerCommands() {
     const language = lang();
-    return this.call('setMyCommands', { commands: menuFor(language) }).then(() => {
-      this.menuLang = language;
-    });
+    const commands = menuFor(language);
+    await this.call('setMyCommands', { commands });
+    await this.call('setMyCommands', { commands, scope: { type: 'all_private_chats' } });
+    this.menuLang = language;
+    this.log(`Telegram: "/" menu set (${commands.length} commands, ${language})`);
+  }
+
+  /** What Telegram shows in private chats' "/" menu (for /status). */
+  async menuStatus(): Promise<string> {
+    const shown = await this.call<{ command: string }[]>('getMyCommands', { scope: { type: 'all_private_chats' } });
+    const missing = MENU.filter(([c]) => !shown.some((x) => x.command === c)).map(([c]) => `/${c}`);
+    return missing.length
+      ? t(`"/" menu: ${shown.length} of ${MENU.length} commands (missing ${missing.slice(0, 5).join(' ')}${missing.length > 5 ? '…' : ''})`, `เมนู "/": ${shown.length} จาก ${MENU.length} คำสั่ง (ไม่มี ${missing.slice(0, 5).join(' ')}${missing.length > 5 ? '…' : ''})`)
+      : t(`"/" menu: all ${MENU.length} commands ✅ (reopen the chat if your app shows fewer)`, `เมนู "/": ครบ ${MENU.length} คำสั่ง ✅ (ถ้าแอปแสดงไม่ครบ ให้ปิดแล้วเปิดแชทใหม่)`);
   }
 
   /** Re-registers the menu after the language changed (e.g. a preference for Thai was added). */
