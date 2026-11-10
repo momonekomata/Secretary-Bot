@@ -418,6 +418,7 @@ Switch with `/settings` (buttons) or `/model <id>`:
     - `/limit gemini off`: no Gemini limits
     - `/limit gemini reset` or `/limit reset`: back to the `.env` values
   - Limits set in chat are saved with your settings and override `.env`. In `/limit` they're marked ✏️.
+  - The cap for **all AI together** applies on top of the Gemini and Claude caps. If it is lower, it stops replies first; `/limit` warns you when that is the case.
   - Starting values come from `.env`: `GEMINI_DAILY_WARNING_LIMIT_USD` / `GEMINI_DAILY_HARD_LIMIT_USD`, the same for `CLAUDE_…`, and `DAILY_…` for the overall limit.
   - Only you can change limits, with the command. The AI can't change them itself, so nothing in an email or web page can raise them.
 - Commands that just look things up (`/todo`, `/food`, `/budget`, `/calendar`, `/inbox`, `/forecast`, `/stats`…) don't use the AI.
@@ -503,6 +504,7 @@ Edit `data/.env` on the NAS, then restart the container. Only the first group is
 | "Google is not connected" | Run `npm run google-auth` again on your computer and copy the new `token.json` to `data/`. |
 | A feature says a key is missing | Add the key to `data/.env` and restart the container. |
 | "Daily limit reached" | A cost cap was hit; it resets at midnight, or raise it now with `/limit` (e.g. `/limit gemini 1`). |
+| Still blocked after raising the Gemini or Claude cap | The **all AI together** cap (from `DAILY_HARD_LIMIT_USD` in `.env`) also applies. The block message says which cap stopped it; send `/limit all 5` or `/limit all off`. |
 | A slip or food was logged wrong | Tell it ("that was rent, not transfer"), or use `/budget edit`, `/budget remove`, `/food remove`. |
 | Health import shows 0 days | Send the import report to the developer; it lists the columns found in each file. |
 | It's "typing" for a long time | Big jobs (health import, email scan, long research) take a minute or two; `/healthimport status` shows import progress. |

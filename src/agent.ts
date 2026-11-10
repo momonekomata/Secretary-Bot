@@ -41,6 +41,11 @@ export interface Limit {
   from: { warnUsd: 'chat' | 'env'; capUsd: 'chat' | 'env' };
 }
 
+/** A round amount comfortably above a cap, for the "raise it" hint. */
+export function suggestRaise(cap: number): number {
+  return [1, 2, 3, 5, 10, 20, 50, 100, 200, 500, 1000].find((x) => x >= cap * 2) ?? 1000;
+}
+
 /** The daily limits in force: values set in chat with /limit win over .env. */
 export function effectiveLimits(billing: Config['billing'], settings: Settings): Record<LimitScope, Limit> {
   const env: Record<LimitScope, { warnUsd: number | null; capUsd: number | null }> = {
@@ -196,8 +201,10 @@ export class Agent {
     const total = limits.all.capUsd;
     if (total !== null && this.spentToday() >= total) {
       throw new BudgetExceeded(
-        `🛑 Daily spending cap reached: $${this.spentToday().toFixed(4)} of $${total.toFixed(2)}.\n` +
-          'AI features are paused to protect your wallet and unlock again at midnight. Commands like /todo and /stats still work. Change the limit with /limit.',
+        `🛑 Daily cap reached for all AI together: $${this.spentToday().toFixed(4)} of $${total.toFixed(2)}` +
+          `${limits.all.from.capUsd === 'env' ? ' (from the .env file)' : ''}.\n` +
+          'AI features are paused until midnight to protect your wallet. Commands like /todo and /stats still work.\n' +
+          `To carry on now, raise it with /limit all ${suggestRaise(total)} or remove it with /limit all off.`,
       );
     }
     const cap = limits[provider].capUsd;
@@ -209,7 +216,7 @@ export class Agent {
         `🛑 ${PROVIDER_NAMES[provider]}'s daily cap reached: $${spent.toFixed(4)} of $${cap.toFixed(2)}. ${PROVIDER_NAMES[provider]} is paused until midnight.` +
           (canSwitch ? `\nYou can switch to ${PROVIDER_NAMES[other]} in /settings meanwhile.` : '') +
           (provider === 'gemini' ? '\n(Voice notes and spoken replies always use Gemini.)' : '') +
-          '\nChange the limit with /limit.',
+          `\nTo carry on now: /limit ${provider} ${suggestRaise(cap)}`,
       );
     }
   }

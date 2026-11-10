@@ -99,6 +99,15 @@ function parseUsd(s: string | undefined): number | null | undefined {
   return v > 0 && v <= 1000 ? Math.round(v * 100) / 100 : undefined;
 }
 
+/** Warns when the all-AI cap is lower than a provider's cap, since it then stops that provider first. */
+function overallNote(l: Record<LimitScope, { capUsd: number | null }>): string {
+  const all = l.all.capUsd;
+  if (all === null) return '';
+  const higher = (['gemini', 'claude'] as const).filter((p) => l[p].capUsd === null || l[p].capUsd! > all);
+  if (!higher.length) return '';
+  return `⚠️ The cap for all AI together (${usd(all)}) is lower than ${higher.map((p) => `${SCOPE_NAMES[p]}'s (${usd(l[p].capUsd)})`).join(' and ')}, so it applies first. Raise it with /limit all 5 or remove it with /limit all off.`;
+}
+
 /** The daily spending limits, with buttons for common caps. */
 export function limitsView(ctx: CommandContext, notice = ''): CommandReply {
   const { agent, store } = ctx;
@@ -113,19 +122,22 @@ export function limitsView(ctx: CommandContext, notice = ''): CommandReply {
     line('claude'),
     line('all'),
     store.settings().limits ? '✏️ = set here in chat; the rest come from the .env file.' : 'All values come from the .env file.',
+    overallNote(l),
     '',
     'At the cap, that AI pauses until midnight. At the warning, I add a one-time note to a reply.',
     'Change: /limit gemini 3 (cap) · /limit claude warn 1 · /limit all 5 · /limit gemini off · /limit reset (back to .env)',
   ]
     .filter((x, i) => x !== '' || i > 1)
     .join('\n');
-  const capRow = (scope: 'gemini' | 'claude', amounts: number[]) => [
-    ...amounts.map((a) => ({ label: `${l[scope].capUsd === a ? '✅ ' : ''}${SCOPE_NAMES[scope]} $${a}`, command: `/limit ${scope} ${a}` })),
-    { label: `${l[scope].capUsd === null ? '✅ ' : ''}No cap`, command: `/limit ${scope} cap off` },
+  // Short labels: Telegram cuts long ones in a row of four. The chosen one shows just "✅ $5".
+  const short: Record<LimitScope, string> = { gemini: 'Gemini', claude: 'Claude', all: 'All AI' };
+  const capRow = (scope: LimitScope, amounts: number[]) => [
+    ...amounts.map((a) => ({ label: l[scope].capUsd === a ? `✅ $${a}` : `${short[scope]} $${a}`, command: `/limit ${scope} ${a}` })),
+    { label: l[scope].capUsd === null ? '✅ No cap' : 'No cap', command: `/limit ${scope} cap off` },
   ];
   return {
     text,
-    buttons: [capRow('gemini', [1, 2, 5]), capRow('claude', [1, 3, 5]), [{ label: '↩️ Use .env values', command: '/limit reset' }]],
+    buttons: [capRow('gemini', [1, 2, 5]), capRow('claude', [1, 3, 5]), capRow('all', [1, 3, 5]), [{ label: '↩️ Use .env values', command: '/limit reset' }]],
   };
 }
 
@@ -297,7 +309,9 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
           store.updateSettings({ limits: { ...limits, [scope]: { ...(limits[scope] ?? {}), ...patch } } });
           const l = agent.limits()[scope];
           const note = l.warnUsd !== null && l.capUsd !== null && l.warnUsd >= l.capUsd ? ` (the warning ${usd(l.warnUsd)} is not below the cap, so it won't show)` : '';
-          return limitsView(ctx, `✅ ${msg}${note}\n`);
+          const all = agent.limits().all.capUsd;
+          const blocked = scope !== 'all' && all !== null && agent.spentToday() >= all ? `\n⚠️ The cap for all AI together (${usd(all)}) is already reached today, so AI stays paused until you raise it: /limit all 5 or /limit all off.` : '';
+          return limitsView(ctx, `✅ ${msg}${note}${blocked}\n`);
         };
         if (!second) return limitsView(ctx);
         if (second === 'reset') {
