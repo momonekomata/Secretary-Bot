@@ -1,5 +1,6 @@
 import type { Google } from './google';
 import type { Budget, Store, Txn } from './store';
+import { lang, t } from './i18n';
 import { localClock, zonedTime } from './time';
 
 /**
@@ -9,29 +10,30 @@ import { localClock, zonedTime } from './time';
 
 export type Flow = 'out' | 'in' | 'move';
 
-export const CATEGORIES: Record<string, { label: string; flow: Flow; words: string[] }> = {
-  food: { label: '🍜 Food & drinks', flow: 'out', words: ['อาหาร', 'กิน', 'ข้าว', 'กาแฟ', 'restaurant', 'coffee', 'eat'] },
-  groceries: { label: '🛒 Groceries', flow: 'out', words: ['ของใช้', 'ซุปเปอร์', 'supermarket', 'grocery'] },
-  transport: { label: '⛽ Transport & fuel', flow: 'out', words: ['เดินทาง', 'น้ำมัน', 'รถ', 'แท็กซี่', 'bts', 'mrt', 'fuel', 'gas', 'taxi', 'grab'] },
-  shopping: { label: '🛍️ Shopping', flow: 'out', words: ['ช้อปปิ้ง', 'ซื้อของ', 'shop'] },
-  bills: { label: '💡 Bills & utilities', flow: 'out', words: ['บิล', 'ค่าน้ำ', 'ค่าไฟ', 'โทรศัพท์', 'เน็ต', 'utilities', 'phone', 'internet', 'electric', 'water'] },
-  subscriptions: { label: '🔁 Subscriptions', flow: 'out', words: ['สมาชิก', 'รายเดือน', 'subscription', 'netflix', 'spotify', 'youtube'] },
-  health: { label: '💊 Health', flow: 'out', words: ['สุขภาพ', 'ยา', 'หมอ', 'โรงพยาบาล', 'medical', 'doctor', 'gym'] },
-  education: { label: '📚 Education', flow: 'out', words: ['การศึกษา', 'เรียน', 'หนังสือ', 'course', 'books', 'school'] },
-  fun: { label: '🎬 Fun & hobbies', flow: 'out', words: ['บันเทิง', 'เกม', 'หนัง', 'entertainment', 'games', 'movies', 'hobby'] },
-  travel: { label: '✈️ Travel', flow: 'out', words: ['ท่องเที่ยว', 'โรงแรม', 'ตั๋ว', 'hotel', 'flight', 'trip'] },
-  housing: { label: '🏠 Housing', flow: 'out', words: ['บ้าน', 'ค่าเช่า', 'คอนโด', 'rent', 'condo', 'home'] },
-  insurance: { label: '🛡️ Insurance', flow: 'out', words: ['ประกัน'] },
-  family: { label: '👪 Family & gifts', flow: 'out', words: ['ครอบครัว', 'พ่อแม่', 'ของขวัญ', 'ทำบุญ', 'gift', 'donation', 'parents'] },
-  fees: { label: '🧾 Fees, tax & interest', flow: 'out', words: ['ค่าธรรมเนียม', 'ภาษี', 'ดอกเบี้ย', 'tax', 'fee'] },
-  transfer: { label: '↔️ Transfers to people', flow: 'out', words: ['โอน', 'transfers', 'people'] },
-  other: { label: '📦 Other', flow: 'out', words: ['อื่นๆ', 'misc'] },
-  salary: { label: '💼 Salary', flow: 'in', words: ['เงินเดือน', 'wage', 'pay'] },
-  income: { label: '💰 Other income', flow: 'in', words: ['รายได้', 'เงินเข้า', 'interest income', 'bonus', 'โบนัส'] },
-  refund: { label: '↩️ Refunds', flow: 'in', words: ['คืนเงิน', 'cashback'] },
-  savings: { label: '🏦 Savings & investing', flow: 'move', words: ['ออม', 'ลงทุน', 'สหกรณ์', 'invest', 'save'] },
-  own: { label: '🔁 Between my accounts', flow: 'move', words: ['บัญชีตัวเอง', 'own account'] },
-  card_payment: { label: '💳 Credit card bill', flow: 'move', words: ['บัตรเครดิต', 'credit card', 'card bill'] },
+/** `label` is the English name and `th` the Thai one: read them through labelOf(), which picks by the current language. */
+export const CATEGORIES: Record<string, { label: string; th: string; flow: Flow; words: string[] }> = {
+  food: { label: '🍜 Food & drinks', th: '🍜 อาหารและเครื่องดื่ม', flow: 'out', words: ['อาหาร', 'กิน', 'ข้าว', 'กาแฟ', 'restaurant', 'coffee', 'eat'] },
+  groceries: { label: '🛒 Groceries', th: '🛒 ของใช้และของสด', flow: 'out', words: ['ของใช้', 'ซุปเปอร์', 'supermarket', 'grocery'] },
+  transport: { label: '⛽ Transport & fuel', th: '⛽ เดินทางและน้ำมัน', flow: 'out', words: ['เดินทาง', 'น้ำมัน', 'รถ', 'แท็กซี่', 'bts', 'mrt', 'fuel', 'gas', 'taxi', 'grab'] },
+  shopping: { label: '🛍️ Shopping', th: '🛍️ ช้อปปิ้ง', flow: 'out', words: ['ช้อปปิ้ง', 'ซื้อของ', 'shop'] },
+  bills: { label: '💡 Bills & utilities', th: '💡 บิลและค่าสาธารณูปโภค', flow: 'out', words: ['บิล', 'ค่าน้ำ', 'ค่าไฟ', 'โทรศัพท์', 'เน็ต', 'utilities', 'phone', 'internet', 'electric', 'water'] },
+  subscriptions: { label: '🔁 Subscriptions', th: '🔁 ค่าสมาชิกรายเดือน', flow: 'out', words: ['สมาชิก', 'รายเดือน', 'subscription', 'netflix', 'spotify', 'youtube'] },
+  health: { label: '💊 Health', th: '💊 สุขภาพ', flow: 'out', words: ['สุขภาพ', 'ยา', 'หมอ', 'โรงพยาบาล', 'medical', 'doctor', 'gym'] },
+  education: { label: '📚 Education', th: '📚 การศึกษา', flow: 'out', words: ['การศึกษา', 'เรียน', 'หนังสือ', 'course', 'books', 'school'] },
+  fun: { label: '🎬 Fun & hobbies', th: '🎬 บันเทิงและงานอดิเรก', flow: 'out', words: ['บันเทิง', 'เกม', 'หนัง', 'entertainment', 'games', 'movies', 'hobby'] },
+  travel: { label: '✈️ Travel', th: '✈️ ท่องเที่ยว', flow: 'out', words: ['ท่องเที่ยว', 'โรงแรม', 'ตั๋ว', 'hotel', 'flight', 'trip'] },
+  housing: { label: '🏠 Housing', th: '🏠 ที่อยู่อาศัย', flow: 'out', words: ['บ้าน', 'ค่าเช่า', 'คอนโด', 'rent', 'condo', 'home'] },
+  insurance: { label: '🛡️ Insurance', th: '🛡️ ประกัน', flow: 'out', words: ['ประกัน'] },
+  family: { label: '👪 Family & gifts', th: '👪 ครอบครัวและของขวัญ', flow: 'out', words: ['ครอบครัว', 'พ่อแม่', 'ของขวัญ', 'ทำบุญ', 'gift', 'donation', 'parents'] },
+  fees: { label: '🧾 Fees, tax & interest', th: '🧾 ค่าธรรมเนียม ภาษี และดอกเบี้ย', flow: 'out', words: ['ค่าธรรมเนียม', 'ภาษี', 'ดอกเบี้ย', 'tax', 'fee'] },
+  transfer: { label: '↔️ Transfers to people', th: '↔️ โอนให้คนอื่น', flow: 'out', words: ['โอน', 'transfers', 'people'] },
+  other: { label: '📦 Other', th: '📦 อื่นๆ', flow: 'out', words: ['อื่นๆ', 'misc'] },
+  salary: { label: '💼 Salary', th: '💼 เงินเดือน', flow: 'in', words: ['เงินเดือน', 'wage', 'pay'] },
+  income: { label: '💰 Other income', th: '💰 รายรับอื่นๆ', flow: 'in', words: ['รายได้', 'เงินเข้า', 'interest income', 'bonus', 'โบนัส'] },
+  refund: { label: '↩️ Refunds', th: '↩️ เงินคืน', flow: 'in', words: ['คืนเงิน', 'cashback'] },
+  savings: { label: '🏦 Savings & investing', th: '🏦 เงินออมและการลงทุน', flow: 'move', words: ['ออม', 'ลงทุน', 'สหกรณ์', 'invest', 'save'] },
+  own: { label: '🔁 Between my accounts', th: '🔁 โอนระหว่างบัญชีตัวเอง', flow: 'move', words: ['บัญชีตัวเอง', 'own account'] },
+  card_payment: { label: '💳 Credit card bill', th: '💳 จ่ายบัตรเครดิต', flow: 'move', words: ['บัตรเครดิต', 'credit card', 'card bill'] },
 };
 
 export const CATEGORY_KEYS = Object.keys(CATEGORIES);
@@ -44,12 +46,21 @@ export function findCategory(text: string): string | null {
   for (const [key, c] of Object.entries(CATEGORIES)) {
     if (c.label.toLowerCase().includes(t) || c.words.some((w) => w.toLowerCase() === t)) return key;
   }
+  // Thai names (as shown in reports): the text must cover most of the name, so a fragment like "เงิน" doesn't pick salary.
+  for (const [key, c] of Object.entries(CATEGORIES)) {
+    const name = c.th.replace(/^[^\p{L}]+/u, '');
+    if (name.startsWith(t) && t.length >= name.length * 0.6) return key;
+  }
   for (const [key, c] of Object.entries(CATEGORIES)) if (c.words.some((w) => t.includes(w.toLowerCase()))) return key;
   return null;
 }
 
 export const flowOf = (category: string): Flow => CATEGORIES[category]?.flow ?? 'out';
-const labelOf = (category: string) => CATEGORIES[category]?.label ?? category;
+/** A category's name with its emoji, in the current language. */
+export function labelOf(category: string): string {
+  const c = CATEGORIES[category];
+  return c ? t(c.label, c.th) : category;
+}
 
 export const baht = (n: number) => `฿${n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
 
@@ -70,6 +81,9 @@ const startOf = (y: number, m: number, startDay: number) => {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), Math.min(startDay, daysIn(d.getUTCFullYear(), d.getUTCMonth()))));
 };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTH_NAMES_TH = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 
 /**
  * The budget month containing `now` (or `back` months before it). With a start day such as 25 (payday),
@@ -82,10 +96,13 @@ export function periodOf(now: Date, timeZone: string, startDay = 1, back = 0): P
   const from = startOf(y, month, startDay);
   const to = startOf(y, month + 1, startDay);
   const last = new Date(to.getTime() - 86_400_000);
+  const th = lang() === 'th';
+  const names = th ? MONTH_NAMES_TH : MONTH_NAMES;
+  const short = th ? MONTHS_TH : MONTHS;
   const label =
     startDay <= 1
-      ? `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][from.getUTCMonth()]} ${from.getUTCFullYear()}`
-      : `${from.getUTCDate()} ${MONTHS[from.getUTCMonth()]} – ${last.getUTCDate()} ${MONTHS[last.getUTCMonth()]} ${last.getUTCFullYear()}`;
+      ? `${names[from.getUTCMonth()]} ${from.getUTCFullYear()}`
+      : `${from.getUTCDate()} ${short[from.getUTCMonth()]} – ${last.getUTCDate()} ${short[last.getUTCMonth()]} ${last.getUTCFullYear()}`;
   return { from: iso(from), to: iso(to), label };
 }
 
@@ -162,11 +179,11 @@ export function logTxn(store: Store, chatKey: string, input: TxnInput, timeZone:
   return { txn: store.addMoney(chatKey, t), duplicate: false };
 }
 
-export function txnLine(t: Txn): string {
-  const sign = flowOf(t.category) === 'in' ? '+' : '';
-  const amount = t.currency ? `${t.amount.toLocaleString('en-US')} ${t.currency}` : baht(t.amount);
-  const extra = [t.discount ? `co-pay saved ${baht(t.discount)}` : '', t.note ?? ''].filter(Boolean).join(', ');
-  return `#${t.id} ${t.day.slice(5)} ${sign}${amount} ${labelOf(t.category).split(' ')[0]} ${t.payee}${extra ? ` (${extra})` : ''}`;
+export function txnLine(x: Txn): string {
+  const sign = flowOf(x.category) === 'in' ? '+' : '';
+  const amount = x.currency ? `${x.amount.toLocaleString('en-US')} ${x.currency}` : baht(x.amount);
+  const extra = [x.discount ? t(`co-pay saved ${baht(x.discount)}`, `ส่วนลดร่วมจ่าย ${baht(x.discount)}`) : '', x.note ?? ''].filter(Boolean).join(', ');
+  return `#${x.id} ${x.day.slice(5)} ${sign}${amount} ${labelOf(x.category).split(' ')[0]} ${x.payee}${extra ? ` (${extra})` : ''}`;
 }
 
 // --- reports ---
@@ -202,11 +219,15 @@ const pct = (a: number, b: number) => Math.round((a / b) * 100);
 /** A month's report: spending against the budget, by category, plus income and money moved. */
 export function report(store: Store, chatKey: string, now: Date, timeZone: string, opts: { back?: number; from?: string; to?: string; category?: string; list?: boolean } = {}): string {
   const budget = store.budget(chatKey);
-  const p: Period = opts.from && opts.to ? { from: opts.from, to: nextDay(opts.to), label: `${opts.from} to ${opts.to}` } : periodOf(now, timeZone, budget.startDay, opts.back ?? 0);
+  const p: Period = opts.from && opts.to ? { from: opts.from, to: nextDay(opts.to), label: t(`${opts.from} to ${opts.to}`, `${opts.from} ถึง ${opts.to}`) } : periodOf(now, timeZone, budget.startDay, opts.back ?? 0);
   let txns = store.money(chatKey).filter((t) => t.day >= p.from && t.day < p.to);
   if (opts.category) txns = txns.filter((t) => t.category === opts.category);
   const sum = totals(txns);
-  if (!txns.length) return `💰 ${p.label}: nothing logged yet.${store.money(chatKey).length ? '' : ' Send me a payment slip, tell me what you spent, or use /budget scan to read your email.'}`;
+  if (!txns.length)
+    return t(
+      `💰 ${p.label}: nothing logged yet.${store.money(chatKey).length ? '' : ' Send me a payment slip, tell me what you spent, or use /budget scan to read your email.'}`,
+      `💰 ${p.label}: ยังไม่มีรายการ${store.money(chatKey).length ? '' : ' ส่งสลิปมาได้เลย บอกว่าใช้จ่ายอะไรไป หรือใช้ /budget scan ให้อ่านจากอีเมล'}`,
+    );
 
   const today = localClock(now, timeZone).day;
   const current = today >= p.from && today < p.to;
@@ -215,11 +236,19 @@ export function report(store: Store, chatKey: string, now: Date, timeZone: strin
     const left = budget.monthly - sum.spent;
     const daysLeft = current ? Math.max(1, Math.round((Date.parse(p.to) - Date.parse(today)) / 86_400_000)) : 0;
     lines.push(
-      `Spent ${baht(sum.spent)} of ${baht(budget.monthly)} (${pct(sum.spent, budget.monthly)}%)` +
-        (left >= 0 ? ` · ${baht(Math.round(left))} left${daysLeft ? `, about ${baht(Math.floor(left / daysLeft))}/day for ${daysLeft} days` : ''}` : ` · ${baht(Math.round(-left))} over`),
+      t(`Spent ${baht(sum.spent)} of ${baht(budget.monthly)} (${pct(sum.spent, budget.monthly)}%)`, `ใช้ไป ${baht(sum.spent)} จาก ${baht(budget.monthly)} (${pct(sum.spent, budget.monthly)}%)`) +
+        (left >= 0
+          ? t(
+              ` · ${baht(Math.round(left))} left${daysLeft ? `, about ${baht(Math.floor(left / daysLeft))}/day for ${daysLeft} days` : ''}`,
+              ` · เหลือ ${baht(Math.round(left))}${daysLeft ? ` ใช้ได้ประมาณวันละ ${baht(Math.floor(left / daysLeft))} อีก ${daysLeft} วัน` : ''}`,
+            )
+          : t(` · ${baht(Math.round(-left))} over`, ` · เกินงบ ${baht(Math.round(-left))}`)),
     );
-  } else lines.push(`Spent ${baht(Math.round(sum.spent * 100) / 100)}`);
-  if (sum.income) lines.push(`Income ${baht(sum.income)}${sum.spent ? ` · net ${sum.income - sum.spent >= 0 ? '+' : '−'}${baht(Math.round(Math.abs(sum.income - sum.spent)))}` : ''}`);
+  } else lines.push(t(`Spent ${baht(Math.round(sum.spent * 100) / 100)}`, `ใช้ไป ${baht(Math.round(sum.spent * 100) / 100)}`));
+  if (sum.income) {
+    const net = sum.spent ? `${sum.income - sum.spent >= 0 ? '+' : '−'}${baht(Math.round(Math.abs(sum.income - sum.spent)))}` : '';
+    lines.push(t(`Income ${baht(sum.income)}${net ? ` · net ${net}` : ''}`, `รายรับ ${baht(sum.income)}${net ? ` · สุทธิ ${net}` : ''}`));
+  }
   const cats = Object.entries(sum.byCategory).sort((a, b) => b[1] - a[1]);
   for (const [cat, amount] of cats) {
     const limit = budget.categories?.[cat];
@@ -227,11 +256,11 @@ export function report(store: Store, chatKey: string, now: Date, timeZone: strin
   }
   for (const [cat, limit] of Object.entries(budget.categories ?? {})) if (!sum.byCategory[cat] && !opts.category) lines.push(`• ${labelOf(cat)} ฿0 / ${baht(limit)}`);
   const moved = Object.entries(sum.moved);
-  if (moved.length) lines.push(`Not counted as spending: ${moved.map(([c, a]) => `${labelOf(c)} ${baht(Math.round(a))}`).join(' · ')}`);
+  if (moved.length) lines.push(`${t('Not counted as spending', 'ไม่นับเป็นรายจ่าย')}: ${moved.map(([c, a]) => `${labelOf(c)} ${baht(Math.round(a))}`).join(' · ')}`);
   const foreign = Object.entries(sum.foreign);
-  if (foreign.length) lines.push(`In other currencies: ${foreign.map(([c, a]) => `${a.toLocaleString('en-US')} ${c}`).join(', ')}`);
+  if (foreign.length) lines.push(`${t('In other currencies', 'สกุลเงินอื่น')}: ${foreign.map(([c, a]) => `${a.toLocaleString('en-US')} ${c}`).join(', ')}`);
   const saved = txns.reduce((n, t) => n + (t.discount ?? 0), 0);
-  if (saved) lines.push(`Co-pay schemes paid ${baht(saved)} for you.`);
+  if (saved) lines.push(t(`Co-pay schemes paid ${baht(saved)} for you.`, `โครงการร่วมจ่ายช่วยออกให้ ${baht(saved)}`));
   if (opts.list) lines.push('', ...[...txns].sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 40).map(txnLine));
   return lines.join('\n');
 }
@@ -256,8 +285,9 @@ export function budgetAlerts(store: Store, chatKey: string, now: Date, timeZone:
     if (store.ranOn(key) === p.from) continue;
     store.markRan(key, p.from);
     if (level === 100) store.markRan(`budget:${chatKey}:${cat}:80`, p.from);
-    const name = cat === 'total' ? 'your monthly budget' : `the ${labelOf(cat)} budget`;
-    out.push(level === 100 ? `🚨 You've gone over ${name}: ${baht(Math.round(spent))} of ${baht(limit)}.` : `⚠️ You've used ${pct(spent, limit)}% of ${name}: ${baht(Math.round(spent))} of ${baht(limit)}.`);
+    const name = cat === 'total' ? t('your monthly budget', 'งบรายเดือน') : t(`the ${labelOf(cat)} budget`, `งบหมวด ${labelOf(cat)}`);
+    const amounts = t(`${baht(Math.round(spent))} of ${baht(limit)}.`, `${baht(Math.round(spent))} จาก ${baht(limit)}`);
+    out.push(level === 100 ? t(`🚨 You've gone over ${name}: ${amounts}`, `🚨 ใช้เกิน${name}แล้ว: ${amounts}`) : t(`⚠️ You've used ${pct(spent, limit)}% of ${name}: ${amounts}`, `⚠️ ใช้${name}ไปแล้ว ${pct(spent, limit)}%: ${amounts}`));
   }
   return out;
 }
@@ -342,9 +372,14 @@ export async function scanEmail(
 }
 
 export function scanSummary(r: ScanResult): string {
-  if (!r.emails) return '📧 No new money emails since the last check.';
-  if (!r.added.length) return `📧 Checked ${r.emails} email(s): nothing new to log${r.duplicates ? ` (${r.duplicates} already logged)` : ''}.`;
-  return [`📧 Logged ${r.added.length} transaction(s) from ${r.emails} email(s)${r.duplicates ? ` (${r.duplicates} already logged)` : ''}:`, ...r.added.map(txnLine), 'Fix one with /budget edit <#> <category>, or /budget remove <#>.'].join('\n');
+  if (!r.emails) return t('📧 No new money emails since the last check.', '📧 ไม่มีอีเมลเรื่องเงินใหม่ตั้งแต่ตรวจครั้งล่าสุด');
+  const dups = r.duplicates ? t(` (${r.duplicates} already logged)`, ` (บันทึกไว้แล้ว ${r.duplicates} รายการ)`) : '';
+  if (!r.added.length) return t(`📧 Checked ${r.emails} email(s): nothing new to log${dups}.`, `📧 ตรวจอีเมล ${r.emails} ฉบับแล้ว: ไม่มีรายการใหม่${dups}`);
+  return [
+    t(`📧 Logged ${r.added.length} transaction(s) from ${r.emails} email(s)${dups}:`, `📧 บันทึก ${r.added.length} รายการจากอีเมล ${r.emails} ฉบับ${dups}:`),
+    ...r.added.map(txnLine),
+    t('Fix one with /budget edit <#> <category>, or /budget remove <#>.', 'แก้หมวดด้วย /budget edit <#> <หมวด> หรือลบด้วย /budget remove <#>'),
+  ].join('\n');
 }
 
 export type { Budget };

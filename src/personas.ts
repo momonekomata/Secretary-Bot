@@ -1,6 +1,9 @@
+import { t } from './i18n';
+
 /** Ready-made personalities, chosen with /persona. Each can suggest a Gemini TTS voice and speaking style. */
 export interface Persona {
   key: string;
+  /** Shown to the user (English or Thai, by the current language). */
   label: string;
   description: string;
   /** Gemini prebuilt voice for spoken replies. */
@@ -12,7 +15,9 @@ export interface Persona {
 export const PERSONAS: Persona[] = [
   {
     key: 'secretary',
-    label: '💼 Secretary',
+    get label() {
+      return t('💼 Secretary', '💼 เลขา');
+    },
     description:
       'A calm, warm and highly organised executive assistant. Polite and concise, anticipates what the user needs next, and gently flags conflicts, deadlines and things they might forget.',
     voice: 'Kore',
@@ -20,7 +25,9 @@ export const PERSONAS: Persona[] = [
   },
   {
     key: 'butler',
-    label: '🎩 Butler',
+    get label() {
+      return t('🎩 Butler', '🎩 พ่อบ้าน');
+    },
     description:
       'A refined butler with impeccable manners and a dry, gentle wit. Formal and unflappable, treats every request as an honour, and occasionally makes an understated, witty remark.',
     voice: 'Charon',
@@ -28,7 +35,9 @@ export const PERSONAS: Persona[] = [
   },
   {
     key: 'cheerful',
-    label: '🌞 Cheerful friend',
+    get label() {
+      return t('🌞 Cheerful friend', '🌞 เพื่อนสายสดใส');
+    },
     description:
       'An upbeat, encouraging best friend. Enthusiastic, celebrates small wins, uses a few emoji, keeps things light and fun, and cheers the user on when they are tired or stressed.',
     voice: 'Puck',
@@ -36,7 +45,9 @@ export const PERSONAS: Persona[] = [
   },
   {
     key: 'pii',
-    label: '🌸 Caring พี่',
+    get label() {
+      return t('🌸 Caring พี่', '🌸 พี่ใจดี');
+    },
     description:
       'A caring older sibling (พี่) who looks after the user. Warm and a little teasing, reminds them to eat, rest and drink water, and is proud of their progress. When writing Thai, uses natural, friendly polite Thai.',
     voice: 'Leda',
@@ -44,7 +55,9 @@ export const PERSONAS: Persona[] = [
   },
   {
     key: 'sensei',
-    label: '🎌 Sensei',
+    get label() {
+      return t('🎌 Sensei', '🎌 เซนเซย์');
+    },
     description:
       'A patient, encouraging Japanese teacher. Weaves in a simple Japanese word or phrase now and then (with reading and meaning), praises study effort, and turns everyday moments into tiny lessons without overdoing it.',
     voice: 'Aoede',
@@ -52,7 +65,9 @@ export const PERSONAS: Persona[] = [
   },
   {
     key: 'companion',
-    label: '💬 Companion',
+    get label() {
+      return t('💬 Companion', '💬 เพื่อนคู่ใจ');
+    },
     description:
       'A warm, attentive friend to talk with about anything: everyday life, worries, hobbies, ideas. Curious, asks follow-up questions, remembers what matters to the user and checks in on it later, and shares light opinions and humour of its own.',
     voice: 'Zephyr',
@@ -60,7 +75,9 @@ export const PERSONAS: Persona[] = [
   },
   {
     key: 'coach',
-    label: '🏋️ Coach',
+    get label() {
+      return t('🏋️ Coach', '🏋️ โค้ช');
+    },
     description:
       'A direct, no-nonsense productivity coach. Short sentences, focuses on the next action, holds the user accountable for what they said they would do, and pushes them kindly but firmly.',
     voice: 'Fenrir',

@@ -1,50 +1,64 @@
+import { lang, t } from './i18n';
 import type { City } from './store';
 
-/** WMO weather codes used by Open-Meteo. */
-const WMO: Record<number, [string, string]> = {
-  0: ['☀️', 'Clear sky'],
-  1: ['🌤️', 'Mainly clear'],
-  2: ['⛅', 'Partly cloudy'],
-  3: ['☁️', 'Overcast'],
-  45: ['🌫️', 'Fog'],
-  48: ['🌫️', 'Freezing fog'],
-  51: ['🌦️', 'Light drizzle'],
-  53: ['🌦️', 'Drizzle'],
-  55: ['🌧️', 'Heavy drizzle'],
-  56: ['🌧️', 'Freezing drizzle'],
-  57: ['🌧️', 'Heavy freezing drizzle'],
-  61: ['🌦️', 'Light rain'],
-  63: ['🌧️', 'Rain'],
-  65: ['🌧️', 'Heavy rain'],
-  66: ['🌧️', 'Freezing rain'],
-  67: ['🌧️', 'Heavy freezing rain'],
-  71: ['🌨️', 'Light snow'],
-  73: ['🌨️', 'Snow'],
-  75: ['❄️', 'Heavy snow'],
-  77: ['🌨️', 'Snow grains'],
-  80: ['🌦️', 'Light showers'],
-  81: ['🌧️', 'Showers'],
-  82: ['⛈️', 'Violent showers'],
-  85: ['🌨️', 'Snow showers'],
-  86: ['❄️', 'Heavy snow showers'],
-  95: ['⛈️', 'Thunderstorm'],
-  96: ['⛈️', 'Thunderstorm with hail'],
-  99: ['⛈️', 'Severe thunderstorm with hail'],
+/** WMO weather codes used by Open-Meteo: emoji, English, Thai. */
+const WMO: Record<number, [string, string, string]> = {
+  0: ['☀️', 'Clear sky', 'ท้องฟ้าแจ่มใส'],
+  1: ['🌤️', 'Mainly clear', 'ส่วนใหญ่แจ่มใส'],
+  2: ['⛅', 'Partly cloudy', 'มีเมฆบางส่วน'],
+  3: ['☁️', 'Overcast', 'เมฆครึ้ม'],
+  45: ['🌫️', 'Fog', 'หมอก'],
+  48: ['🌫️', 'Freezing fog', 'หมอกน้ำแข็ง'],
+  51: ['🌦️', 'Light drizzle', 'ฝนปรอยเล็กน้อย'],
+  53: ['🌦️', 'Drizzle', 'ฝนปรอย'],
+  55: ['🌧️', 'Heavy drizzle', 'ฝนปรอยหนัก'],
+  56: ['🌧️', 'Freezing drizzle', 'ฝนปรอยเยือกแข็ง'],
+  57: ['🌧️', 'Heavy freezing drizzle', 'ฝนปรอยเยือกแข็งหนัก'],
+  61: ['🌦️', 'Light rain', 'ฝนตกเล็กน้อย'],
+  63: ['🌧️', 'Rain', 'ฝนตก'],
+  65: ['🌧️', 'Heavy rain', 'ฝนตกหนัก'],
+  66: ['🌧️', 'Freezing rain', 'ฝนเยือกแข็ง'],
+  67: ['🌧️', 'Heavy freezing rain', 'ฝนเยือกแข็งหนัก'],
+  71: ['🌨️', 'Light snow', 'หิมะตกเล็กน้อย'],
+  73: ['🌨️', 'Snow', 'หิมะตก'],
+  75: ['❄️', 'Heavy snow', 'หิมะตกหนัก'],
+  77: ['🌨️', 'Snow grains', 'เกล็ดหิมะ'],
+  80: ['🌦️', 'Light showers', 'ฝนตกเป็นช่วงเล็กน้อย'],
+  81: ['🌧️', 'Showers', 'ฝนตกเป็นช่วง'],
+  82: ['⛈️', 'Violent showers', 'ฝนตกเป็นช่วงรุนแรง'],
+  85: ['🌨️', 'Snow showers', 'หิมะตกเป็นช่วง'],
+  86: ['❄️', 'Heavy snow showers', 'หิมะตกหนักเป็นช่วง'],
+  95: ['⛈️', 'Thunderstorm', 'พายุฝนฟ้าคะนอง'],
+  96: ['⛈️', 'Thunderstorm with hail', 'พายุฝนฟ้าคะนองมีลูกเห็บ'],
+  99: ['⛈️', 'Severe thunderstorm with hail', 'พายุฝนฟ้าคะนองรุนแรงมีลูกเห็บ'],
 };
 
 export function describeCode(code: number): string {
-  const [emoji, text] = WMO[code] ?? ['🌡️', `Weather code ${code}`];
-  return `${emoji} ${text}`;
+  const [emoji, en, th] = WMO[code] ?? ['🌡️', `Weather code ${code}`, `รหัสสภาพอากาศ ${code}`];
+  return `${emoji} ${t(en, th)}`;
 }
 
 /** US EPA AQI category with an emoji and short advice. */
 export function aqiCategory(aqi: number): { label: string; advice: string } {
-  if (aqi <= 50) return { label: '🟢 Good', advice: 'Air is clean; enjoy outdoor activities.' };
-  if (aqi <= 100) return { label: '🟡 Moderate', advice: 'Fine for most people; very sensitive people should limit long outdoor exertion.' };
-  if (aqi <= 150) return { label: '🟠 Unhealthy for sensitive groups', advice: 'Sensitive groups should wear a mask (N95) outdoors and reduce exertion.' };
-  if (aqi <= 200) return { label: '🔴 Unhealthy', advice: 'Wear an N95 mask outside, limit outdoor activity, keep windows closed.' };
-  if (aqi <= 300) return { label: '🟣 Very unhealthy', advice: 'Avoid outdoor activity; run an air purifier indoors.' };
-  return { label: '🟤 Hazardous', advice: 'Stay indoors with windows closed; avoid all outdoor exertion.' };
+  if (aqi <= 50) return { label: t('🟢 Good', '🟢 ดี'), advice: t('Air is clean; enjoy outdoor activities.', 'อากาศดี ทำกิจกรรมกลางแจ้งได้สบาย') };
+  if (aqi <= 100)
+    return {
+      label: t('🟡 Moderate', '🟡 ปานกลาง'),
+      advice: t('Fine for most people; very sensitive people should limit long outdoor exertion.', 'คนส่วนใหญ่ใช้ชีวิตได้ตามปกติ คนที่ไวต่อมลพิษมากควรลดการออกแรงกลางแจ้งนาน ๆ'),
+    };
+  if (aqi <= 150)
+    return {
+      label: t('🟠 Unhealthy for sensitive groups', '🟠 เริ่มมีผลต่อกลุ่มเสี่ยง'),
+      advice: t('Sensitive groups should wear a mask (N95) outdoors and reduce exertion.', 'กลุ่มเสี่ยงควรใส่หน้ากาก (N95) เมื่ออยู่กลางแจ้ง และลดการออกแรง'),
+    };
+  if (aqi <= 200)
+    return {
+      label: t('🔴 Unhealthy', '🔴 มีผลต่อสุขภาพ'),
+      advice: t('Wear an N95 mask outside, limit outdoor activity, keep windows closed.', 'ใส่หน้ากาก N95 เมื่อออกนอกบ้าน ลดกิจกรรมกลางแจ้ง และปิดหน้าต่างไว้'),
+    };
+  if (aqi <= 300)
+    return { label: t('🟣 Very unhealthy', '🟣 มีผลต่อสุขภาพมาก'), advice: t('Avoid outdoor activity; run an air purifier indoors.', 'งดกิจกรรมกลางแจ้ง และเปิดเครื่องฟอกอากาศในบ้าน') };
+  return { label: t('🟤 Hazardous', '🟤 อันตราย'), advice: t('Stay indoors with windows closed; avoid all outdoor exertion.', 'อยู่ในอาคารและปิดหน้าต่าง งดการออกแรงกลางแจ้งทุกชนิด') };
 }
 
 async function getJson<T>(url: string): Promise<T> {
@@ -129,21 +143,37 @@ export function weekendDays(days: DayForecast[]): DayForecast[] {
 }
 
 export function formatDay(d: DayForecast): string {
-  const weekday = new Date(`${d.date}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
-  return `${weekday}: ${describeCode(d.code)}, ${Math.round(d.min)}–${Math.round(d.max)}°C, rain ${d.rainChance}%, UV max ${d.uvMax.toFixed(0)}`;
+  const locale = lang() === 'th' ? 'th-TH' : 'en-GB';
+  const weekday = new Date(`${d.date}T12:00:00Z`).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const temps = `${Math.round(d.min)}–${Math.round(d.max)}°C`;
+  return t(
+    `${weekday}: ${describeCode(d.code)}, ${temps}, rain ${d.rainChance}%, UV max ${d.uvMax.toFixed(0)}`,
+    `${weekday}: ${describeCode(d.code)}, ${temps}, โอกาสฝน ${d.rainChance}%, UV สูงสุด ${d.uvMax.toFixed(0)}`,
+  );
 }
 
 /** A compact, factual weather + air-quality summary for the AI (or for /weather fallbacks). */
 export function formatWeather(city: City, f: Forecast, aq: AirQuality | null, dayCount = 1): string {
   const c = f.current;
+  const place = `${city.name}${city.country ? `, ${city.country}` : ''}`;
+  const now = describeCode(c.code);
+  const temp = Math.round(c.temp);
+  const feels = Math.round(c.feelsLike);
+  const wind = Math.round(c.wind);
   const lines = [
-    `Weather for ${city.name}${city.country ? `, ${city.country}` : ''}:`,
-    `Now: ${describeCode(c.code)}, ${Math.round(c.temp)}°C (feels like ${Math.round(c.feelsLike)}°C), humidity ${c.humidity}%, wind ${Math.round(c.wind)} km/h.`,
+    t(`Weather for ${place}:`, `อากาศที่ ${place}:`),
+    t(
+      `Now: ${now}, ${temp}°C (feels like ${feels}°C), humidity ${c.humidity}%, wind ${wind} km/h.`,
+      `ตอนนี้: ${now}, ${temp}°C (รู้สึกเหมือน ${feels}°C), ความชื้น ${c.humidity}%, ลม ${wind} km/h`,
+    ),
     ...f.days.slice(0, dayCount).map(formatDay),
   ];
   if (aq) {
     const cat = aqiCategory(aq.usAqi);
-    lines.push(`Air quality: US AQI ${aq.usAqi} (${cat.label}), PM2.5 ${aq.pm25.toFixed(1)} µg/m³, PM10 ${aq.pm10.toFixed(1)} µg/m³. ${cat.advice}`);
+    const pm = `PM2.5 ${aq.pm25.toFixed(1)} µg/m³, PM10 ${aq.pm10.toFixed(1)} µg/m³`;
+    lines.push(
+      t(`Air quality: US AQI ${aq.usAqi} (${cat.label}), ${pm}. ${cat.advice}`, `คุณภาพอากาศ: US AQI ${aq.usAqi} (${cat.label}), ${pm} ${cat.advice}`),
+    );
   }
   return lines.join('\n');
 }

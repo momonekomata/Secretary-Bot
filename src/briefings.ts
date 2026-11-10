@@ -8,6 +8,7 @@ import { fetchNews, formatNews } from './news';
 import type { Store, UsageRow } from './store';
 import { modelInfo } from './models';
 import { localClock } from './time';
+import { t } from './i18n';
 import { bodyNumbers } from './health';
 import { briefingLine, budgetAlerts, scanEmail, scanSummary } from './money';
 import { formatDay as formatWatchDay } from './healthsync';
@@ -138,7 +139,7 @@ export class Briefings {
     const city = await resolveCity(this.store, this.cfg.weather.defaultCity, cityName);
     const [f, aq] = await Promise.all([forecast(city), airQuality(city).catch(() => null)]);
     const days = weekendDays(f.days);
-    if (!days.length) return 'I could not find the weekend in the forecast.';
+    if (!days.length) return t('I could not find the weekend in the forecast.', 'หาวันเสาร์อาทิตย์ในพยากรณ์อากาศไม่เจอ');
     return this.agent.generate(
       'Write a weekend weather and activity planner: a one-line weekend overview, then for Saturday and Sunday the conditions, how good it is ' +
         'for outdoor plans, and 2-3 suggested activities (indoor ones when it rains), then pro-tips (UV, air quality, what to wear). ' +
@@ -190,17 +191,19 @@ export function usageStats(rows: UsageRow[], timeZone: string, now: Date): strin
       .map(([name, cost]) => `${name} $${cost.toFixed(4)}`)
       .join(', ');
   return [
-    '📊 AI usage and estimated cost',
-    `Today: $${sum(todayRows).toFixed(4)} (${todayRows.length} calls)${todayRows.length ? ` · ${byProvider(todayRows)}` : ''}`,
-    `This month: $${sum(monthRows).toFixed(4)} (${monthRows.length} calls)${monthRows.length ? ` · ${byProvider(monthRows)}` : ''}`,
-    `Kept in log: $${sum(rows).toFixed(4)} (${rows.length} calls)`,
+    t('📊 AI usage and estimated cost', '📊 การใช้งาน AI และค่าใช้จ่ายโดยประมาณ'),
+    t(`Today: $${sum(todayRows).toFixed(4)} (${todayRows.length} calls)`, `วันนี้: $${sum(todayRows).toFixed(4)} (${todayRows.length} ครั้ง)`) + (todayRows.length ? ` · ${byProvider(todayRows)}` : ''),
+    t(`This month: $${sum(monthRows).toFixed(4)} (${monthRows.length} calls)`, `เดือนนี้: $${sum(monthRows).toFixed(4)} (${monthRows.length} ครั้ง)`) + (monthRows.length ? ` · ${byProvider(monthRows)}` : ''),
+    t(`Kept in log: $${sum(rows).toFixed(4)} (${rows.length} calls)`, `ในบันทึกที่เก็บไว้: $${sum(rows).toFixed(4)} (${rows.length} ครั้ง)`),
     '',
-    'This month by model:',
+    t('This month by model:', 'เดือนนี้แยกตามโมเดล:'),
     ...(byModel.size
-      ? [...byModel].map(([model, m]) => `• ${model}: in ${fmt(m.input)} / out ${fmt(m.output)} tokens, $${m.cost.toFixed(4)}`)
-      : ['• no calls yet']),
+      ? [...byModel].map(([model, m]) =>
+          t(`• ${model}: in ${fmt(m.input)} / out ${fmt(m.output)} tokens, $${m.cost.toFixed(4)}`, `• ${model}: เข้า ${fmt(m.input)} / ออก ${fmt(m.output)} โทเคน, $${m.cost.toFixed(4)}`),
+        )
+      : [t('• no calls yet', '• ยังไม่มีการเรียกใช้')]),
     '',
-    'Estimates from list prices; check your provider dashboards for exact billing.',
+    t('Estimates from list prices; check your provider dashboards for exact billing.', 'ประมาณจากราคาตามประกาศ ยอดเรียกเก็บจริงดูได้ในแดชบอร์ดของผู้ให้บริการ'),
   ].join('\n');
 }
 

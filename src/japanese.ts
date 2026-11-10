@@ -2,7 +2,7 @@ import type { Agent } from './agent';
 import { STYLE } from './briefings';
 import type { Config } from './config';
 import type { Store } from './store';
-import type { ReviewItem, Reviews } from './review';
+import { reviewLang, type ReviewItem, type Reviews } from './review';
 import { fetchSubjects, wanikaniLevel, type WkSubject } from './wanikani';
 
 export const JLPT_LEVELS = ['N5', 'N4', 'N3', 'N2', 'N1'] as const;
@@ -115,7 +115,17 @@ export class JapaneseDaily {
     return this.reviews.dueItems().catch(() => []);
   }
 
+  /** Thai when a standing preference asks for it (the quiz lines are fixed text, like the review itself). */
+  private get thai(): boolean {
+    return reviewLang(this.store.settings().preferences) === 'th';
+  }
+
   private quizIntro(n: number) {
+    if (this.thai) {
+      return n === 1
+        ? 'ข้อนี้ถึงกำหนดรีวิวใน WaniKani พอดี ตอบที่นี่ได้เลย จะนับเป็นรีวิวด้วย (การ์ดเต็มจะตามมาหลังตอบ)'
+        : 'ทั้งสองข้อถึงกำหนดรีวิวใน WaniKani ตอบที่นี่ได้เลย จะนับเป็นรีวิวด้วย (การ์ดเต็มจะตามมาหลังตอบ)';
+    }
     return n === 1
       ? 'It is due on WaniKani, so answer here and it counts as your review (the full card comes after).'
       : 'Both are due on WaniKani, so answer here and they count as your reviews (the full cards come after).';
@@ -133,7 +143,8 @@ export class JapaneseDaily {
   private async single(kind: 'kanji' | 'words', chatKey?: string): Promise<string> {
     if (chatKey && this.reviews) {
       const quiz = await this.dueQuiz(kind, await this.dueNow());
-      if (quiz) return `🈁 ${kind === 'kanji' ? 'Kanji' : 'Word'} of the day. ${this.quizIntro(1)}\n\n${this.reviews.begin(chatKey, [quiz])}`;
+      const title = this.thai ? (kind === 'kanji' ? 'คันจิประจำวัน' : 'คำศัพท์ประจำวัน') : `${kind === 'kanji' ? 'Kanji' : 'Word'} of the day.`;
+      if (quiz) return `🈁 ${title} ${this.quizIntro(1)}\n\n${this.reviews.begin(chatKey, [quiz])}`;
     }
     return this.card(kind);
   }
@@ -145,10 +156,14 @@ export class JapaneseDaily {
     const [k, w] = await Promise.all([kq ? null : this.card('kanji'), wq ? null : this.card('words')]);
     const cards = [k, w].filter(Boolean).join('\n\n— — —\n\n');
     const quiz = [kq, wq].filter((q): q is ReviewItem => !!q);
-    const parts = ["🇯🇵 Today's Japanese"];
+    const th = this.thai;
+    const parts = [th ? '🇯🇵 ภาษาญี่ปุ่นวันนี้' : "🇯🇵 Today's Japanese"];
     if (cards) parts.push(cards);
     if (quiz.length && chatKey && this.reviews) {
-      parts.push(`${quiz.length === 2 ? "Today's kanji and word" : `Today's ${kq ? 'kanji' : 'word'}`}: ${this.quizIntro(quiz.length)}`, this.reviews.begin(chatKey, quiz));
+      const label = th
+        ? quiz.length === 2 ? 'คันจิและคำศัพท์วันนี้' : kq ? 'คันจิวันนี้' : 'คำศัพท์วันนี้'
+        : quiz.length === 2 ? "Today's kanji and word" : `Today's ${kq ? 'kanji' : 'word'}`;
+      parts.push(`${label}: ${this.quizIntro(quiz.length)}`, this.reviews.begin(chatKey, quiz));
     }
     return parts.join('\n\n');
   }

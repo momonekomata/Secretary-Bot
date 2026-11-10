@@ -4,7 +4,9 @@ import { chunkText } from './chunk';
 import type { Button, CommandReply } from './commands';
 import type { Config } from './config';
 import { hasFfmpeg, toOggOpus } from './audio';
-import { MAX_FILE_BYTES, UserFacingError } from './documents';
+import { fileTooBig, MAX_FILE_BYTES, UserFacingError, voiceTooLong } from './documents';
+import { lang, type Lang } from './i18n';
+import { menuFor } from './menu';
 import type { AudioInput } from './voice';
 
 interface TgUser {
@@ -152,38 +154,22 @@ export class Telegram implements Channel {
     this.stopped = true;
   }
 
-  /** Fills Telegram's "/" command menu. */
+  /** Language the "/" menu was last registered in. */
+  private menuLang: Lang | null = null;
+
+  /** Fills Telegram's "/" command menu with every command, described in the user's language. */
   private registerCommands() {
-    const commands: [string, string][] = [
-      ['brief', 'Morning briefing now'],
-      ['news', 'News digest (optionally: /news topic)'],
-      ['weather', "Today's weather and air quality"],
-      ['forecast', '7-day forecast'],
-      ['weekend', 'Weekend weather planner'],
-      ['review', 'Do your WaniKani reviews here'],
-      ['kanji', 'Kanji of the day'],
-      ['word', 'Japanese word of the day'],
-      ['food', "Today's food and calories"],
-      ['bmi', 'BMI, BMR and calorie target'],
-      ['budget', 'Spending this month and budgets'],
-      ['health', 'Watch data: steps, heart rate, workouts'],
-      ['roleplay', 'Start a roleplay or Japanese practice scene'],
-      ['todo', 'Show to-do list'],
-      ['add', 'Add a to-do'],
-      ['calendar', 'Upcoming Google Calendar events'],
-      ['inbox', 'Unread Gmail'],
-      ['gtask', 'Google Tasks (list, or add with text)'],
-      ['topics', 'News watchlist'],
-      ['persona', 'Choose my personality'],
-      ['prefs', 'Your standing preferences (language, emoji...)'],
-      ['export', 'Download your data'],
-      ['settings', 'AI model, effort, voice translation'],
-      ['stats', 'AI usage and cost'],
-      ['limit', 'Daily AI spending limits (USD)'],
-      ['status', 'Check connections'],
-      ['help', 'Everything I can do'],
-    ];
-    return this.call('setMyCommands', { commands: commands.map(([command, description]) => ({ command, description })) });
+    const language = lang();
+    return this.call('setMyCommands', { commands: menuFor(language) }).then(() => {
+      this.menuLang = language;
+    });
+  }
+
+  /** Re-registers the menu after the language changed (e.g. a preference for Thai was added). */
+  private syncMenu() {
+    if (this.menuLang !== null && this.menuLang !== lang()) {
+      void this.registerCommands().catch((e) => this.log('Telegram setMyCommands failed:', (e as Error).message));
+    }
   }
 
   /** Registers `url` as the webhook (webhook mode). */
@@ -257,6 +243,7 @@ export class Telegram implements Channel {
         if (msg.document) incoming.file = await this.downloadDocument(msg.document);
       }
       const reply = await this.secretary.handle(incoming);
+      this.syncMenu();
       if (reply) await this.sendReply(chatId, reply);
     } catch (e) {
       this.log('Telegram handler error:', e);
@@ -274,6 +261,7 @@ export class Telegram implements Channel {
     const chatId = String(msg.chat.id);
     try {
       const reply = await this.secretary.handle({ platform: 'telegram', chatKey: `telegram:${chatId}`, userId: String(q.from.id), text: q.data });
+      this.syncMenu();
       if (!reply) return;
       const markup = inlineKeyboard(reply.buttons);
       await this.call('editMessageText', {
@@ -311,12 +299,12 @@ export class Telegram implements Channel {
   private async downloadDocument(f: TgFile): Promise<IncomingMessage['file']> {
     const name = f.file_name ?? 'file';
     // Bots can only download files up to 20 MB from Telegram.
-    if ((f.file_size ?? 0) > MAX_FILE_BYTES) throw new UserFacingError(`${name} is too big for me (max about 15 MB).`);
+    if ((f.file_size ?? 0) > MAX_FILE_BYTES) throw new UserFacingError(fileTooBig(name));
     return { name, mime: f.mime_type ?? 'application/octet-stream', data: await this.download(f.file_id) };
   }
 
   private async downloadAudio(f: TgFile): Promise<AudioInput | undefined> {
-    if ((f.file_size ?? 0) > MAX_AUDIO_BYTES) throw new UserFacingError('That voice note is too long for me (max about 15 MB).');
+    if ((f.file_size ?? 0) > MAX_AUDIO_BYTES) throw new UserFacingError(voiceTooLong());
     // Telegram voice notes are Ogg/Opus, which Gemini reads directly.
     return { mimeType: f.mime_type ?? 'audio/ogg', data: (await this.download(f.file_id)).toString('base64') };
   }

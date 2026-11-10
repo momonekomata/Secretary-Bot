@@ -3,6 +3,7 @@ import type { DocumentInput } from './documents';
 import type { Google } from './google';
 import type { ImageInput, Provider, ToolSpec } from './llm/types';
 import { HealthData, HealthDb } from './healthdb';
+import { t } from './i18n';
 import { HealthSync } from './healthsync';
 import type { Maps } from './maps';
 import { costOf, modelInfo, type ProviderName, type Usage } from './models';
@@ -200,11 +201,19 @@ export class Agent {
     const limits = this.limits();
     const total = limits.all.capUsd;
     if (total !== null && this.spentToday() >= total) {
+      const spent = this.spentToday().toFixed(4);
+      const fromEnv = limits.all.from.capUsd === 'env';
       throw new BudgetExceeded(
-        `🛑 Daily cap reached for all AI together: $${this.spentToday().toFixed(4)} of $${total.toFixed(2)}` +
-          `${limits.all.from.capUsd === 'env' ? ' (from the .env file)' : ''}.\n` +
-          'AI features are paused until midnight to protect your wallet. Commands like /todo and /stats still work.\n' +
-          `To carry on now, raise it with /limit all ${suggestRaise(total)} or remove it with /limit all off.`,
+        t(
+          `🛑 Daily cap reached for all AI together: $${spent} of $${total.toFixed(2)}` +
+            `${fromEnv ? ' (from the .env file)' : ''}.\n` +
+            'AI features are paused until midnight to protect your wallet. Commands like /todo and /stats still work.\n' +
+            `To carry on now, raise it with /limit all ${suggestRaise(total)} or remove it with /limit all off.`,
+          `🛑 ค่าใช้จ่าย AI ทั้งหมดวันนี้ถึงวงเงินแล้ว: $${spent} จาก $${total.toFixed(2)}` +
+            `${fromEnv ? ' (ตั้งไว้ในไฟล์ .env)' : ''}\n` +
+            'ฟีเจอร์ AI หยุดไว้ก่อนจนถึงเที่ยงคืน เพื่อไม่ให้เสียเงินเกิน คำสั่งอย่าง /todo และ /stats ยังใช้ได้\n' +
+            `ถ้าจะใช้ต่อตอนนี้ เพิ่มวงเงินด้วย /limit all ${suggestRaise(total)} หรือยกเลิกวงเงินด้วย /limit all off`,
+        ),
       );
     }
     const cap = limits[provider].capUsd;
@@ -212,11 +221,19 @@ export class Agent {
     if (cap !== null && spent >= cap) {
       const other: ProviderName = provider === 'gemini' ? 'claude' : 'gemini';
       const canSwitch = this.hasProvider(other) && modelInfo(this.model).provider === provider;
+      const name = PROVIDER_NAMES[provider];
+      const otherName = PROVIDER_NAMES[other];
       throw new BudgetExceeded(
-        `🛑 ${PROVIDER_NAMES[provider]}'s daily cap reached: $${spent.toFixed(4)} of $${cap.toFixed(2)}. ${PROVIDER_NAMES[provider]} is paused until midnight.` +
-          (canSwitch ? `\nYou can switch to ${PROVIDER_NAMES[other]} in /settings meanwhile.` : '') +
-          (provider === 'gemini' ? '\n(Voice notes and spoken replies always use Gemini.)' : '') +
-          `\nTo carry on now: /limit ${provider} ${suggestRaise(cap)}`,
+        t(
+          `🛑 ${name}'s daily cap reached: $${spent.toFixed(4)} of $${cap.toFixed(2)}. ${name} is paused until midnight.` +
+            (canSwitch ? `\nYou can switch to ${otherName} in /settings meanwhile.` : '') +
+            (provider === 'gemini' ? '\n(Voice notes and spoken replies always use Gemini.)' : '') +
+            `\nTo carry on now: /limit ${provider} ${suggestRaise(cap)}`,
+          `🛑 ${name} ถึงวงเงินรายวันแล้ว: $${spent.toFixed(4)} จาก $${cap.toFixed(2)} ${name} หยุดไว้ก่อนจนถึงเที่ยงคืน` +
+            (canSwitch ? `\nระหว่างนี้เปลี่ยนไปใช้ ${otherName} ได้ใน /settings` : '') +
+            (provider === 'gemini' ? '\n(ข้อความเสียงและการตอบเป็นเสียงใช้ Gemini เสมอ)' : '') +
+            `\nถ้าจะใช้ต่อตอนนี้: /limit ${provider} ${suggestRaise(cap)}`,
+        ),
       );
     }
   }
@@ -226,16 +243,27 @@ export class Agent {
     const today = localDay(this.now(), this.cfg.timezone);
     const l = this.limits();
     const checks: [string, string, number | null, number | null, number][] = [
-      ['billing-warning', "today's AI spend", l.all.warnUsd, l.all.capUsd, this.spentToday()],
+      ['billing-warning', t("today's AI spend", 'ค่าใช้จ่าย AI วันนี้'), l.all.warnUsd, l.all.capUsd, this.spentToday()],
       ...(['gemini', 'claude'] as ProviderName[]).map(
-        (p): [string, string, number | null, number | null, number] => [`billing-warning:${p}`, `${PROVIDER_NAMES[p]} today`, l[p].warnUsd, l[p].capUsd, this.spentToday(p)],
+        (p): [string, string, number | null, number | null, number] => [
+          `billing-warning:${p}`,
+          t(`${PROVIDER_NAMES[p]} today`, `${PROVIDER_NAMES[p]} วันนี้`),
+          l[p].warnUsd,
+          l[p].capUsd,
+          this.spentToday(p),
+        ],
       ),
     ];
     const lines: string[] = [];
     for (const [key, label, warn, cap, spent] of checks) {
       if (warn === null || spent < warn || this.store.ranOn(key) === today) continue;
       this.store.markRan(key, today);
-      lines.push(`⚠️ Billing warning: ${label} is $${spent.toFixed(4)} (warning at $${warn.toFixed(2)}${cap !== null ? `, cap $${cap.toFixed(2)}` : ''}).`);
+      lines.push(
+        t(
+          `⚠️ Billing warning: ${label} is $${spent.toFixed(4)} (warning at $${warn.toFixed(2)}${cap !== null ? `, cap $${cap.toFixed(2)}` : ''}).`,
+          `⚠️ แจ้งเตือนค่าใช้จ่าย: ${label} อยู่ที่ $${spent.toFixed(4)} (แจ้งเตือนที่ $${warn.toFixed(2)}${cap !== null ? `, วงเงิน $${cap.toFixed(2)}` : ''})`,
+        ),
+      );
     }
     return lines.length ? `\n\n${lines.join('\n')}` : '';
   }
@@ -333,9 +361,9 @@ export class Agent {
       onUsage: (u) => this.recordUsage(u, kind),
     });
 
-    let reply = result.refused ? "Sorry, I can't help with that one." : result.text;
-    if (result.truncated && reply) reply += '\n\n(…cut off, ask me to continue)';
-    if (!reply) reply = 'Hmm, I got lost in thought there. Could you ask again?';
+    let reply = result.refused ? t("Sorry, I can't help with that one.", 'ขอโทษนะ เรื่องนี้ช่วยไม่ได้จริง ๆ') : result.text;
+    if (result.truncated && reply) reply += t('\n\n(…cut off, ask me to continue)', '\n\n(…ข้อความถูกตัด พิมพ์ให้ตอบต่อได้เลย)');
+    if (!reply) reply = t('Hmm, I got lost in thought there. Could you ask again?', 'อืม คิดเพลินจนหลุดไปเลย ช่วยถามอีกครั้งได้ไหม');
     const attached = [
       input.images?.length ? `[sent ${input.images.length} photo(s)]` : '',
       ...(input.fileNames ?? []).map((n) => `[sent file ${n}]`),
@@ -398,7 +426,7 @@ export class Agent {
       runTool: async () => ({ content: 'No tools in this mode.', isError: true }),
       onUsage: (u) => this.recordUsage(u, kind),
     });
-    const text = result.refused ? "Sorry, I couldn't put that together." : result.text || '(nothing to report)';
+    const text = result.refused ? t("Sorry, I couldn't put that together.", 'ขอโทษนะ สรุปเรื่องนี้ให้ไม่ได้') : result.text || t('(nothing to report)', '(ไม่มีอะไรต้องรายงาน)');
     return text + this.budgetFooter();
   }
 }

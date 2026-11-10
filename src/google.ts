@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { docxText } from './documents';
+import { lang, t } from './i18n';
 
 const S = 'https://www.googleapis.com/auth/';
 
@@ -595,24 +596,26 @@ function decodeHtml(s: string): string {
 // --- formatting helpers shared by tools, commands and briefings ---
 
 export function formatEvents(events: CalendarEvent[], timeZone: string, withIds = false): string {
-  if (!events.length) return 'No events.';
+  if (!events.length) return t('No events.', 'ไม่มีนัดหมาย');
+  const locale = lang() === 'th' ? 'th-TH' : 'en-GB';
   return events
     .map((e) => {
       const allDay = !e.start.includes('T');
       const when = allDay
-        ? `${e.start} (all day)`
-        : new Date(e.start).toLocaleString('en-GB', { timeZone, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        ? `${e.start} ${t('(all day)', '(ทั้งวัน)')}`
+        : new Date(e.start).toLocaleString(locale, { timeZone, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
       return `• ${when}: ${e.summary}${e.location ? ` @ ${e.location}` : ''}${e.calendar ? ` [${e.calendar}]` : ''}${withIds && e.id ? ` (id: ${e.id})` : ''}`;
     })
     .join('\n');
 }
 
 export function formatEmails(emails: EmailSummary[], withIds = false): string {
-  if (!emails.length) return 'No emails found.';
-  return emails.map((m) => `• ${m.date ? `${m.date.replace(/\s*\(.*\)$/, '')} ` : ''}from ${m.from}: "${m.subject}" — ${m.snippet}${withIds && m.id ? ` (id: ${m.id})` : ''}`).join('\n');
+  if (!emails.length) return t('No emails found.', 'ไม่พบอีเมล');
+  const from = t('from', 'จาก');
+  return emails.map((m) => `• ${m.date ? `${m.date.replace(/\s*\(.*\)$/, '')} ` : ''}${from} ${m.from}: "${m.subject}" — ${m.snippet}${withIds && m.id ? ` (id: ${m.id})` : ''}`).join('\n');
 }
 
 export function formatTasks(tasks: GoogleTask[], numbered = false): string {
-  if (!tasks.length) return 'No open Google Tasks.';
-  return tasks.map((t, i) => `${numbered ? `${i + 1}.` : '•'} ${t.title}${t.due ? ` (due ${t.due.slice(0, 10)})` : ''}`).join('\n');
+  if (!tasks.length) return t('No open Google Tasks.', 'ไม่มีงานค้างใน Google Tasks');
+  return tasks.map((x, i) => `${numbered ? `${i + 1}.` : '•'} ${x.title}${x.due ? ` ${t(`(due ${x.due.slice(0, 10)})`, `(กำหนด ${x.due.slice(0, 10)})`)}` : ''}`).join('\n');
 }
