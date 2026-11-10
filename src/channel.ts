@@ -1,4 +1,5 @@
 import { BudgetExceeded, type Agent, type IncomingImage } from './agent';
+import type { Usage } from './models';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Briefings } from './briefings';
@@ -6,7 +7,7 @@ import { runCommand, SLOW_COMMANDS, type Button, type CommandReply } from './com
 import type { Config } from './config';
 import type { GenerateContent } from './llm/gemini';
 import type { Store } from './store';
-import { wav, voiceName, modelUnavailable, speakable, synthesize, toGeminiAudio, TTS_MODELS, type Speech } from './audio';
+import { styleRejected, wav, voiceName, modelUnavailable, speakable, synthesize, toGeminiAudio, TTS_MODELS, type Speech } from './audio';
 import { fileToInput, UserFacingError } from './documents';
 import type { JapaneseDaily } from './japanese';
 import type { Reviews } from './review';
@@ -234,14 +235,22 @@ export class Secretary {
     if (!spoken) return null;
     this.agent.checkBudget('gemini');
     const s = this.store.settings();
-    const style = opts.style ?? s.speakingStyle;
-    const prompt = style ? `Say ${style}: ${spoken}` : spoken;
+    const style = this.styleOff ? '' : (opts.style ?? s.speakingStyle ?? '');
     const voice = voiceName(opts.voice ?? '') ?? voiceName(s.ttsVoice ?? '') ?? voiceName(this.cfg.ttsVoice) ?? 'Kore';
     const models = [...new Set([this.ttsModel, this.cfg.ttsModel, ...TTS_MODELS].filter((m): m is string => !!m))];
     let last: unknown = null;
     for (const model of models) {
       try {
-        const speech = await synthesize(this.gemini, model, voice, prompt, (u) => this.agent.recordUsage(u, 'speech'));
+        const record = (u: Usage) => this.agent.recordUsage(u, 'speech');
+        let speech: Speech | null;
+        try {
+          speech = await synthesize(this.gemini, model, voice, spoken, record, style);
+        } catch (e) {
+          // If the API doesn't take the separate style field, speak without a style rather than reading it aloud.
+          if (!style || !styleRejected(e)) throw e;
+          this.styleOff = true;
+          speech = await synthesize(this.gemini, model, voice, spoken, record);
+        }
         this.ttsModel = model;
         if (speech?.raw && this.cfg.dataDir) {
           // The last clip as Gemini sent it (before cleaning), to check audio problems: data/debug/last-speech.wav
@@ -261,6 +270,9 @@ export class Secretary {
     }
     throw new Error(`No Gemini speech model is available on this API key (tried ${models.join(', ')}): ${(last as Error)?.message ?? ''}`);
   }
+
+  /** Set when the API rejected the speaking-style field: styles are then left out. */
+  private styleOff = false;
 
   /** The speech model that last worked (shown in /status). */
   ttsModel: string | null = null;
