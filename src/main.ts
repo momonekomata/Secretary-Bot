@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage } from 'node:http';
+import { langFromPreferences, useLanguage } from './i18n';
 import { GoogleGenAI } from '@google/genai';
 import { Agent, type Providers } from './agent';
 import { Briefings } from './briefings';
@@ -19,6 +20,8 @@ import { Store } from './store';
 import { Telegram } from './telegram';
 
 const store = new Store(config.dataDir);
+// Fixed messages (command replies, alerts, the Telegram menu) follow a standing preference for Thai.
+useLanguage(() => langFromPreferences(store.settings().preferences));
 
 const gemini = config.geminiKey ? new GoogleGenAI({ apiKey: config.geminiKey }) : null;
 const geminiGenerate: GenerateContent | null = gemini ? (p) => gemini.models.generateContent(p) : null;

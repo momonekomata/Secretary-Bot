@@ -1,4 +1,5 @@
 import type { Config } from './config';
+import { langFromPreferences } from './i18n';
 import { isKana, katakanaToHiragana, readingCandidates } from './kana';
 import type { Store } from './store';
 import { ApiError, dueAssignments, fetchSubjectsByIds, SRS_NAMES, submitReview, type WkSubject } from './wanikani';
@@ -86,7 +87,7 @@ export type ReviewLang = 'en' | 'th';
 
 /** Thai when a standing preference asks for it (e.g. "Always reply in Thai", "ตอบเป็นภาษาไทย"). */
 export function reviewLang(preferences: string[] = []): ReviewLang {
-  return preferences.some((p) => /\bthai\b|ไทย/i.test(p)) ? 'th' : 'en';
+  return langFromPreferences(preferences);
 }
 
 const TEXT = {
