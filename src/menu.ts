@@ -43,6 +43,7 @@ export const MENU: [string, string, string][] = [
   ['prefs', 'Your standing preferences', 'สิ่งที่คุณตั้งค่าไว้ให้ฉันทำเสมอ'],
   ['voice', 'When to answer with voice', 'เมื่อไหร่ให้ตอบเป็นเสียง'],
   ['say', 'Say something out loud', 'พูดข้อความออกเสียง'],
+  ['voices', 'Hear voice samples and pick one', 'ฟังตัวอย่างเสียงแล้วเลือก'],
   ['ttsvoice', 'Choose my speaking voice', 'เลือกเสียงพูดของฉัน'],
   ['translate', 'Language for voice-note translation', 'ภาษาที่ใช้แปลข้อความเสียง'],
   ['settings', 'AI model, effort, voice translation', 'โมเดล AI ความพยายามในการคิด และการแปลเสียง'],

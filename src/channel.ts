@@ -228,14 +228,15 @@ export class Secretary {
   }
 
   /** Spoken version of `text` (Gemini text-to-speech), or null when unavailable. */
-  async speech(text: string): Promise<Speech | null> {
+  async speech(text: string, opts: { voice?: string; style?: string } = {}): Promise<Speech | null> {
     if (!this.gemini) return null;
     const spoken = speakable(text);
     if (!spoken) return null;
     this.agent.checkBudget('gemini');
     const s = this.store.settings();
-    const prompt = s.speakingStyle ? `Say ${s.speakingStyle}: ${spoken}` : spoken;
-    const voice = voiceName(s.ttsVoice ?? '') ?? voiceName(this.cfg.ttsVoice) ?? 'Kore';
+    const style = opts.style ?? s.speakingStyle;
+    const prompt = style ? `Say ${style}: ${spoken}` : spoken;
+    const voice = voiceName(opts.voice ?? '') ?? voiceName(s.ttsVoice ?? '') ?? voiceName(this.cfg.ttsVoice) ?? 'Kore';
     const models = [...new Set([this.ttsModel, this.cfg.ttsModel, ...TTS_MODELS].filter((m): m is string => !!m))];
     let last: unknown = null;
     for (const model of models) {

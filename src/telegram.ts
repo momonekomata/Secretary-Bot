@@ -103,9 +103,10 @@ export class Telegram implements Channel {
   }
 
   /** Sends an Ogg/Opus voice bubble. */
-  async sendVoice(chatId: string, ogg: Buffer, durationMs: number) {
+  async sendVoice(chatId: string, ogg: Buffer, durationMs: number, caption = '') {
     const form = new FormData();
     form.append('chat_id', chatId);
+    if (caption) form.append('caption', caption.slice(0, 1000));
     form.append('duration', String(Math.max(1, Math.round(durationMs / 1000))));
     form.append('voice', new Blob([ogg], { type: 'audio/ogg' }), 'reply.ogg');
     const res = await fetch(`${this.api}/sendVoice`, { method: 'POST', body: form });
@@ -115,8 +116,37 @@ export class Telegram implements Channel {
 
   private async sendReply(chatId: string, reply: CommandReply) {
     if (reply.file) await this.sendFile(chatId, reply.file.name, reply.file.data, reply.text);
-    else if (reply.text) await this.send(chatId, reply.text, reply.buttons);
+    else if (reply.text) await this.send(chatId, reply.text, reply.samples ? undefined : reply.buttons);
     await this.sendSpeech(chatId, reply);
+    if (reply.samples) await this.sendSamples(chatId, reply.samples);
+  }
+
+  /** Voice samples: made three at a time, sent in order with captions, then the footer with its buttons. */
+  private async sendSamples(chatId: string, samples: NonNullable<CommandReply['samples']>) {
+    let failed = 0;
+    let firstError: unknown = null;
+    for (let i = 0; i < samples.items.length; i += 3) {
+      const batch = samples.items.slice(i, i + 3);
+      await this.call('sendChatAction', { chat_id: chatId, action: 'record_voice' }).catch(() => undefined);
+      const made = await Promise.allSettled(
+        batch.map(async (s) => {
+          if (!hasFfmpeg()) throw new Error('ffmpeg is not installed');
+          const speech = await this.secretary.speech(samples.line, { voice: s.voice, style: samples.style });
+          if (!speech) throw new Error('no audio returned');
+          return { ogg: await toOggOpus(speech), durationMs: speech.durationMs };
+        }),
+      );
+      for (const [j, r] of made.entries()) {
+        if (r.status === 'fulfilled') await this.sendVoice(chatId, r.value.ogg, r.value.durationMs, batch[j].caption).catch((e) => ((failed++), (firstError ??= e)));
+        else {
+          failed++;
+          firstError ??= r.reason;
+        }
+      }
+      if (failed === batch.length && i === 0) break; // nothing works (e.g. no credit): don't try the rest
+    }
+    const note = failed ? `\n\n${speechFailed(firstError)}${failed < samples.items.length ? ` (${failed}/${samples.items.length})` : ''}` : '';
+    await this.send(chatId, samples.footer.text + note, samples.footer.buttons);
   }
 
   /** Sends the spoken part of a reply as a voice bubble; on failure says why (and gives the text). */
