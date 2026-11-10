@@ -281,3 +281,27 @@ describe('a voice per language', () => {
     expect(store.settings().ttsVoiceByLang).toBeUndefined();
   });
 });
+
+describe('voice sample buttons', () => {
+  it('tapping "Hear female voice samples" (or "6 more voices") sends the samples, like typing /voices', async () => {
+    const sent: { method: string; text?: string; caption?: string }[] = [];
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const method = url.split('/').pop()!;
+      if (init?.body instanceof FormData) sent.push({ method, caption: String(init.body.get('caption') ?? '') });
+      else if (method === 'sendMessage' || method === 'editMessageText') sent.push({ method, text: JSON.parse(String(init!.body)).text });
+      return Response.json({ ok: true, result: {} });
+    });
+    const { ctx } = setup();
+    const secretary = {
+      isSlow: () => false,
+      handle: async (m: IncomingMessage) => runCommand(m.text, ctx),
+      speech: async () => ({ pcm: Buffer.alloc(9600), rate: 24000, durationMs: 200 }),
+    } as unknown as Secretary;
+    const tg = new Telegram({ ...testConfig().telegram, token: 't' }, secretary, () => undefined);
+    await tg.handleUpdate({ update_id: 1, callback_query: { id: 'q', from: { id: 1 }, data: '/voices more', message: { message_id: 9, chat: { id: 1, type: 'private' } } } } as never);
+    expect(sent.some((s) => s.method === 'editMessageText')).toBe(false); // the tapped menu stays
+    expect(sent[0].text).toMatch(/^🎧 6 voice samples are on the way/);
+    expect(sent.at(-1)!.text).toMatch(/^Which one do you like\?/);
+    if (hasFfmpeg()) expect(sent.filter((s) => s.method === 'sendVoice').map((s) => s.caption)).toEqual(['1. Kore · firm', '2. Callirrhoe · easy-going', '3. Erinome · clear', '4. Sulafat · warm', '5. Pulcherrima · forward', '6. Gacrux · mature']);
+  });
+});

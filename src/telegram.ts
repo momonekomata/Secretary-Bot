@@ -325,6 +325,9 @@ export class Telegram implements Channel {
       const reply = await this.secretary.handle({ platform: 'telegram', chatKey: `telegram:${chatId}`, userId: String(q.from.id), text: q.data });
       this.syncMenu();
       if (!reply) return;
+      // Voice samples (e.g. the "Hear female voice samples" button) come as new messages, like typing /voices,
+      // and leave the menu that was tapped as it was.
+      if (reply.samples) return await this.sendReply(chatId, reply);
       const markup = inlineKeyboard(reply.buttons);
       await this.call('editMessageText', {
         chat_id: chatId,
