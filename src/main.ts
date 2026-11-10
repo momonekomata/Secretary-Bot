@@ -8,6 +8,7 @@ import { config } from './config';
 import { Google } from './google';
 import { anthropicCreate, ClaudeProvider } from './llm/claude';
 import { GeminiProvider, type GenerateContent, geminiVoiceGenerate } from './llm/gemini';
+import { VertexGemini, vertexSetup } from './llm/vertex';
 import { Line, verifyLineSignature } from './line';
 import { hasFfmpeg } from './audio';
 import { FileHost } from './files';
@@ -24,7 +25,19 @@ const store = new Store(config.dataDir);
 useLanguage(() => langFromPreferences(store.settings().preferences));
 
 const gemini = config.geminiKey ? new GoogleGenAI({ apiKey: config.geminiKey }) : null;
-const geminiGenerate: GenerateContent | null = gemini ? (p) => gemini.models.generateContent(p) : null;
+const studioGenerate: GenerateContent | null = gemini ? (p) => gemini.models.generateContent(p) : null;
+// Vertex AI (Google Cloud billing) when its key file is in data/; the Gemini API key backs it up.
+let vertex: VertexGemini | null = null;
+try {
+  const setup = vertexSetup(config.vertex);
+  if (setup) {
+    vertex = new VertexGemini(setup);
+    console.log(`Gemini: via Vertex AI (project ${setup.project}, ${setup.location})${studioGenerate ? ', Gemini API key as backup' : ''}`);
+  }
+} catch (e) {
+  console.warn('Vertex AI not used:', (e as Error).message);
+}
+const geminiGenerate: GenerateContent | null = vertex ? vertex.generate(studioGenerate) : studioGenerate;
 const providers: Providers = {
   ...(geminiGenerate ? { gemini: new GeminiProvider(geminiGenerate) } : {}),
   ...(config.anthropicKey || process.env.ANTHROPIC_AUTH_TOKEN ? { claude: new ClaudeProvider(anthropicCreate()) } : {}),
@@ -51,12 +64,23 @@ async function status(): Promise<string> {
   const model = modelInfo(agent.model);
   const keyMissing = agent.hasProvider(model.provider) ? '' : t(' ⚠️ its API key is missing', ' ⚠️ ยังไม่มีคีย์ API ของโมเดลนี้');
   lines.push(t(`AI model: ${model.label} (${model.id})${keyMissing}`, `โมเดล AI: ${model.label} (${model.id})${keyMissing}`));
-  lines.push(
-    t(
-      `Gemini key: ${config.geminiKey ? '✅' : '❌ not set (needed for Gemini models and voice notes)'}`,
-      `คีย์ Gemini: ${config.geminiKey ? '✅' : '❌ ยังไม่ได้ตั้ง (ต้องใช้กับโมเดล Gemini และข้อความเสียง)'}`,
-    ),
-  );
+  if (vertex) {
+    const check = await vertex
+      .check('gemini-3.8-flash')
+      .then(() => '✅')
+      .catch((e) => `❌ ${String((e as Error).message).slice(0, 160)}`);
+    const { project, location } = vertex.setup;
+    const fell = vertex.fallbacks ? t(` · ${vertex.fallbacks} call(s) fell back to the Gemini API key today (last: ${vertex.lastError.slice(0, 120)})`, ` · วันนี้มี ${vertex.fallbacks} ครั้งที่ใช้คีย์ Gemini API แทน (ล่าสุด: ${vertex.lastError.slice(0, 120)})`) : '';
+    lines.push(t(`Gemini via Vertex AI (Google Cloud billing): ${check} project ${project}, ${location}${fell}`, `Gemini ผ่าน Vertex AI (เรียกเก็บผ่าน Google Cloud): ${check} โปรเจกต์ ${project}, ${location}${fell}`));
+    lines.push(t(`Gemini API key (backup): ${config.geminiKey ? '✅' : '— not set'}`, `คีย์ Gemini API (สำรอง): ${config.geminiKey ? '✅' : '— ยังไม่ได้ตั้ง'}`));
+  } else {
+    lines.push(
+      t(
+        `Gemini key: ${config.geminiKey ? '✅' : '❌ not set (needed for Gemini models and voice notes)'}`,
+        `คีย์ Gemini: ${config.geminiKey ? '✅' : '❌ ยังไม่ได้ตั้ง (ต้องใช้กับโมเดล Gemini และข้อความเสียง)'}`,
+      ),
+    );
+  }
   lines.push(t(`Claude key: ${providers.claude ? '✅' : '— not set (optional)'}`, `คีย์ Claude: ${providers.claude ? '✅' : '— ยังไม่ได้ตั้ง (ไม่บังคับ)'}`));
   if (gemini && model.provider === 'gemini') {
     try {
@@ -94,8 +118,8 @@ async function status(): Promise<string> {
   const voiceState =
     voiceMode === 'off'
       ? ''
-      : !config.geminiKey
-        ? t(' ⚠️ needs GEMINI_API_KEY', ' ⚠️ ต้องมี GEMINI_API_KEY')
+      : !voiceGenerate
+        ? t(' ⚠️ needs GEMINI_API_KEY (or Vertex AI)', ' ⚠️ ต้องมี GEMINI_API_KEY (หรือ Vertex AI)')
         : !hasFfmpeg()
           ? t(' ⚠️ needs ffmpeg', ' ⚠️ ต้องมี ffmpeg')
           : t(
@@ -132,7 +156,8 @@ async function status(): Promise<string> {
 }
 
 // Voice (speech and voice-note transcription) uses the v1beta API, which has the speech settings.
-const voiceGenerate = config.geminiKey ? geminiVoiceGenerate(config.geminiKey) : null;
+const studioVoice = config.geminiKey ? geminiVoiceGenerate(config.geminiKey) : null;
+const voiceGenerate = vertex ? vertex.generate(studioVoice) : studioVoice;
 const secretary = new Secretary(config, store, agent, briefings, voiceGenerate, status, japanese, reviews);
 const channels = new Channels();
 const telegram = config.telegram.token ? new Telegram(config.telegram, secretary) : null;

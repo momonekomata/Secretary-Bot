@@ -117,6 +117,19 @@ export const config = {
   wanikaniToken: process.env.WANIKANI_TOKEN ?? '',
   /** Google Maps Platform key (Places API (New) + Routes API). */
   mapsKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
+
+  /**
+   * Gemini through Vertex AI (Google Cloud billing, so Cloud/trial credits apply): on when the service-account key
+   * file exists. The Gemini API key, if set, stays as the backup for calls that fail on Vertex AI.
+   */
+  vertex: {
+    enabled: (process.env.GEMINI_VIA_VERTEX ?? 'on') !== 'off',
+    keyFile: process.env.VERTEX_KEY_FILE ?? join(dataDirEnv, 'vertex-key.json'),
+    /** Optional: read from the key file when empty. */
+    project: process.env.VERTEX_PROJECT ?? '',
+    /** "global" serves the newest models. */
+    location: process.env.VERTEX_LOCATION ?? 'global',
+  },
 };
 
 export type Config = typeof config;

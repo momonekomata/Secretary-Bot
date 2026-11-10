@@ -484,6 +484,7 @@ Edit `data/.env` on the NAS, then restart the container. Only the first group is
 | `BOT_DAILY_NUDGE_HOUR` | off | Hour for a WaniKani "reviews waiting" nudge |
 | `WANIKANI_TOKEN` | — | WaniKani (needs the `reviews:create` permission for `/review`) |
 | `GOOGLE_MAPS_API_KEY` | — | Places and travel times |
+| `data/vertex-key.json` + `VERTEX_LOCATION`, `VERTEX_PROJECT`, `GEMINI_VIA_VERTEX` | off until the key file is there | Run Gemini through Vertex AI so Google Cloud credit pays for it (SETUP-GUIDE Part 6); the Gemini API key stays as backup |
 | `VOICE_TRANSLATE_TO` | `English` | Voice note translation language |
 | `VOICE_REPLIES` | `voice-notes` | `off`, `voice-notes` or `always` |
 | `TTS_VOICE` | `Kore` | Speaking voice |
