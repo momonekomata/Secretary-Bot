@@ -44,6 +44,7 @@ export const MENU: [string, string, string][] = [
   ['voice', 'When to answer with voice', 'เมื่อไหร่ให้ตอบเป็นเสียง'],
   ['say', 'Say something out loud', 'พูดข้อความออกเสียง'],
   ['voices', 'Hear voice samples and pick one', 'ฟังตัวอย่างเสียงแล้วเลือก'],
+  ['voicestyle', 'How my voice speaks (cute, anime, calm…)', 'สไตล์การพูดของเสียง (น่ารัก อนิเมะ สงบ…)'],
   ['ttsvoice', 'Choose my speaking voice', 'เลือกเสียงพูดของฉัน'],
   ['translate', 'Language for voice-note translation', 'ภาษาที่ใช้แปลข้อความเสียง'],
   ['settings', 'AI model, effort, voice translation', 'โมเดล AI ความพยายามในการคิด และการแปลเสียง'],
@@ -59,7 +60,7 @@ export const MENU: [string, string, string][] = [
 ];
 
 /** Other names for listed commands (not shown in the menu, to keep it short). */
-export const MENU_ALIASES = ['start', 'money', 'pref', 'limits', 'cap', 'remotopic', 'deltopic'];
+export const MENU_ALIASES = ['start', 'money', 'pref', 'limits', 'cap', 'remotopic', 'deltopic', 'style'];
 
 export function menuFor(lang: Lang): { command: string; description: string }[] {
   return MENU.map(([command, en, th]) => ({ command, description: lang === 'th' ? th : en }));

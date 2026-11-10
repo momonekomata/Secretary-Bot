@@ -39,6 +39,20 @@ export interface CommandReply {
 
 /** How the bot speaks after picking a voice in /voices. */
 export const CUTE_STYLE = "in a cute, bright and cheerful young woman's voice, sweet and playful";
+/** Ready-made speaking styles for /voicestyle: [key, English label, Thai label, the style itself]. */
+export const VOICE_STYLES: [string, string, string, string][] = [
+  ['cute', '🍬 Cute', '🍬 น่ารัก', CUTE_STYLE],
+  [
+    'anime',
+    '🌸 Anime heroine',
+    '🌸 นางเอกอนิเมะ',
+    'affectionate, loving and cheerful, yet a little shy; a high-pitched, sweet and melodic voice like an anime heroine',
+  ],
+  ['gentle', '🌙 Soft & gentle', '🌙 นุ่มนวล', 'softly and gently, warm and soothing, at a relaxed pace'],
+  ['energetic', '⚡ Energetic', '⚡ กระฉับกระเฉง', 'bright, bubbly and full of energy, with a quick, lively pace'],
+  ['calm', '☕ Calm & clear', '☕ สงบชัดเจน', 'calm, clear and friendly, like a helpful assistant'],
+];
+
 /** The sample line: Japanese and Thai, the user's main languages. */
 export const SAMPLE_LINE = 'こんにちは！今日も一緒にがんばろうね。 สวัสดีค่ะ วันนี้ก็สู้ๆ ไปด้วยกันนะคะ';
 /** Female-sounding Gemini voices: the cute-leaning ones first, more with /voices more. [voice, English, Thai] */
@@ -78,7 +92,7 @@ export interface CommandContext {
 }
 
 /** Commands that call an AI or an outside API: channels show "typing…" while they run. */
-export const SLOW_COMMANDS = new Set(['/review', '/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say', '/budget', '/money', '/voices']);
+export const SLOW_COMMANDS = new Set(['/review', '/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say', '/budget', '/money', '/voices', '/voicestyle', '/style']);
 
 /** The /help text, in the current language. */
 export function helpText(): string {
@@ -567,6 +581,42 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
           ),
         };
       }
+      case '/voicestyle':
+      case '/style': {
+        const current = store.settings().speakingStyle;
+        // Buttons with a ✅ on the style in use (built after any change below).
+        const styleButtons = (): Button[][] => {
+          const chosen = store.settings().speakingStyle;
+          const rows: Button[][] = [];
+          const presets = VOICE_STYLES.map(([key, en, th, style]) => ({ label: `${style === chosen ? '✅ ' : ''}${t(en, th)}`, command: `/voicestyle ${key}` }));
+          for (let i = 0; i < presets.length; i += 2) rows.push(presets.slice(i, i + 2));
+          rows.push([{ label: `${!chosen ? '✅ ' : ''}${t('🚫 No style', '🚫 ไม่ใส่สไตล์')}`, command: '/voicestyle off' }]);
+          return rows;
+        };
+        const value = arg.trim();
+        if (!value) {
+          return {
+            text: t(
+              `🎙️ Speaking style: ${current ?? 'none (the voice speaks naturally)'}\n\nTap a ready-made style, or describe your own in plain words, e.g.\n/voicestyle shy and sweet, with a soft, high-pitched voice\n\nThe style is how the voice speaks; /voices picks the voice itself.`,
+              `🎙️ สไตล์การพูด: ${current ?? 'ไม่มี (เสียงพูดตามธรรมชาติ)'}\n\nแตะเลือกสไตล์สำเร็จรูป หรือบรรยายเองได้เลย เช่น\n/voicestyle shy and sweet, with a soft, high-pitched voice\n\nสไตล์คือวิธีพูด ส่วน /voices ใช้เลือกเสียง`,
+            ),
+            buttons: styleButtons(),
+          };
+        }
+        if (/^(off|none|clear|reset|ปิด)$/i.test(value)) {
+          store.updateSettings({ speakingStyle: undefined });
+          return { text: t('✅ No speaking style: the voice speaks naturally.', '✅ ไม่ใส่สไตล์: เสียงจะพูดตามธรรมชาติ'), speak: SAMPLE_LINE };
+        }
+        const preset = VOICE_STYLES.find(([key]) => key === value.toLowerCase());
+        const style = preset?.[3] ?? value.slice(0, 300);
+        if (!preset && style.length < 3) return { text: t('Describe the style in a few words, e.g. /voicestyle soft and shy', 'บรรยายสไตล์สั้นๆ เช่น /voicestyle soft and shy'), buttons: styleButtons() };
+        store.updateSettings({ speakingStyle: style });
+        return {
+          text: t(`✅ I'll speak ${style}. Here's how it sounds.`, `✅ ต่อจากนี้จะพูดแบบ: ${style} ลองฟังได้เลย`),
+          speak: SAMPLE_LINE,
+          buttons: styleButtons(),
+        };
+      }
       case '/voices': {
         const [sub = '', name = ''] = arg.split(/\s+/);
         if (sub.toLowerCase() === 'pick') {
@@ -616,7 +666,16 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         const current = voiceName(store.settings().ttsVoice ?? '') ?? voiceName(cfg.ttsVoice) ?? 'Kore';
         const buttons = (chosen: string): Button[][] => {
           const all = styles.map(([v, en, th]) => ({ label: `${v === chosen ? '✅ ' : ''}${v} · ${t(en, th)}`, command: `/ttsvoice ${v}` }));
-          return [all.slice(0, 2), all.slice(2, 4), all.slice(4, 6), all.slice(6, 8), [{ label: t('🎧 Hear female voice samples', '🎧 ฟังตัวอย่างเสียงผู้หญิง'), command: '/voices' }]];
+          return [
+            all.slice(0, 2),
+            all.slice(2, 4),
+            all.slice(4, 6),
+            all.slice(6, 8),
+            [
+              { label: t('🎧 Hear female voice samples', '🎧 ฟังตัวอย่างเสียงผู้หญิง'), command: '/voices' },
+              { label: t('🎙️ Speaking style', '🎙️ สไตล์การพูด'), command: '/voicestyle' },
+            ],
+          ];
         };
         const others = TTS_VOICES.filter((v) => !styles.some(([s]) => s === v)).join(', ');
         if (!arg) {
