@@ -1,4 +1,5 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { hasFfmpeg } from '../audio';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -279,7 +280,10 @@ describe('Telegram spoken replies', () => {
     } as unknown as Secretary;
     const tg = new Telegram({ ...testConfig().telegram, token: 't' }, secretary, () => undefined);
     await tg.handleUpdate({ update_id: 1, message: { message_id: 1, chat: { id: 1, type: 'private' }, from: { id: 1 }, text: '/say hi' } });
-    expect(sent).toEqual(["hi\n\n🔇 I couldn't make the voice reply: no Gemini speech model is available on your API key."]);
+    // Without ffmpeg (e.g. on CI) that is the reason given; with it, the speech error is.
+    const reason = hasFfmpeg() ? 'no Gemini speech model is available on your API key.' : 'ffmpeg is missing on the server.';
+    expect(sent).toEqual([`hi\n\n🔇 I couldn't make the voice reply: ${reason}`]);
+    if (!hasFfmpeg()) return; // encoding a voice bubble needs ffmpeg
 
     speechWorks = true;
     await tg.handleUpdate({ update_id: 2, callback_query: { id: 'q', from: { id: 1 }, data: '/ttsvoice Puck', message: { message_id: 5, chat: { id: 1, type: 'private' } } } });
