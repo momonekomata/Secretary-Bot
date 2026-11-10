@@ -1,4 +1,5 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { hasFfmpeg } from '../audio';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -256,5 +257,36 @@ describe('several slips sent together', () => {
     await Promise.all([line.handleEvent(ev('b', 2) as never), line.handleEvent(ev('a', 1) as never)]);
     expect(seen).toHaveLength(1);
     expect(seen[0].images!.map((i) => Buffer.from(i.data, 'base64').toString())).toEqual(['a', 'b']);
+  });
+});
+
+describe('Telegram spoken replies', () => {
+  it('says why a voice reply failed, and plays speech after a button tap', async () => {
+    const sent: string[] = [];
+    const voices: number[] = [];
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url.includes('/sendMessage')) sent.push(JSON.parse(String(init!.body)).text);
+      if (url.includes('/sendVoice')) voices.push(1);
+      return Response.json({ ok: true, result: {} });
+    });
+    let speechWorks = false;
+    const secretary = {
+      isSlow: () => false,
+      handle: async (m: IncomingMessage) => (m.text === '/say hi' ? { text: '', speak: 'hi' } : { text: '✅ Puck', speak: 'Hello', buttons: [[{ label: 'Puck', command: '/ttsvoice Puck' }]] }),
+      speech: async () => {
+        if (!speechWorks) throw new Error('No Gemini speech model is available on this API key (tried a, b): 404');
+        return { pcm: Buffer.alloc(4800), rate: 24000, durationMs: 100 };
+      },
+    } as unknown as Secretary;
+    const tg = new Telegram({ ...testConfig().telegram, token: 't' }, secretary, () => undefined);
+    await tg.handleUpdate({ update_id: 1, message: { message_id: 1, chat: { id: 1, type: 'private' }, from: { id: 1 }, text: '/say hi' } });
+    // Without ffmpeg (e.g. on CI) that is the reason given; with it, the speech error is.
+    const reason = hasFfmpeg() ? 'no Gemini speech model is available on your API key.' : 'ffmpeg is missing on the server.';
+    expect(sent).toEqual([`hi\n\n🔇 I couldn't make the voice reply: ${reason}`]);
+    if (!hasFfmpeg()) return; // encoding a voice bubble needs ffmpeg
+
+    speechWorks = true;
+    await tg.handleUpdate({ update_id: 2, callback_query: { id: 'q', from: { id: 1 }, data: '/ttsvoice Puck', message: { message_id: 5, chat: { id: 1, type: 'private' } } } });
+    expect(voices).toHaveLength(1);
   });
 });

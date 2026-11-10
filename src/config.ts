@@ -38,6 +38,7 @@ export const config = {
   voiceModel: process.env.VOICE_MODEL ?? 'gemini-3.8-flash',
   defaultTranslateTo: process.env.VOICE_TRANSLATE_TO ?? 'English',
   /** Gemini text-to-speech model and voice for spoken replies. */
+  /** Gemini speech model tried first; the others in audio.ts TTS_MODELS are fallbacks. */
   ttsModel: process.env.TTS_MODEL ?? 'gemini-3.8-flash-tts',
   ttsVoice: process.env.TTS_VOICE ?? 'Kore',
   /** off | voice-notes (answer voice notes with voice) | always. Also /voice in chat. */

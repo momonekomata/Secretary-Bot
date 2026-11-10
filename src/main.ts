@@ -7,7 +7,7 @@ import { Channels, Secretary } from './channel';
 import { config } from './config';
 import { Google } from './google';
 import { anthropicCreate, ClaudeProvider } from './llm/claude';
-import { GeminiProvider, type GenerateContent } from './llm/gemini';
+import { GeminiProvider, type GenerateContent, geminiVoiceGenerate } from './llm/gemini';
 import { Line, verifyLineSignature } from './line';
 import { hasFfmpeg } from './audio';
 import { FileHost } from './files';
@@ -97,7 +97,10 @@ async function status(): Promise<string> {
         ? t(' ⚠️ needs GEMINI_API_KEY', ' ⚠️ ต้องมี GEMINI_API_KEY')
         : !hasFfmpeg()
           ? t(' ⚠️ needs ffmpeg', ' ⚠️ ต้องมี ffmpeg')
-          : t(` ✅ (${config.ttsModel}, voice ${config.ttsVoice})`, ` ✅ (${config.ttsModel}, เสียง ${config.ttsVoice})`);
+          : t(
+              ` ✅ (${secretary.ttsModel ?? (config.ttsModel || 'model picked on first use')}, voice ${store.settings().ttsVoice ?? config.ttsVoice})`,
+              ` ✅ (${secretary.ttsModel ?? (config.ttsModel || 'เลือกโมเดลเมื่อใช้ครั้งแรก')}, เสียง ${store.settings().ttsVoice ?? config.ttsVoice})`,
+            );
   lines.push(
     t(`Spoken replies: ${voiceMode}${voiceState}`, `การตอบเป็นเสียง: ${voiceMode}${voiceState}`),
     t(
@@ -127,7 +130,9 @@ async function status(): Promise<string> {
   return lines.join('\n');
 }
 
-const secretary = new Secretary(config, store, agent, briefings, geminiGenerate, status, japanese, reviews);
+// Voice (speech and voice-note transcription) uses the v1beta API, which has the speech settings.
+const voiceGenerate = config.geminiKey ? geminiVoiceGenerate(config.geminiKey) : null;
+const secretary = new Secretary(config, store, agent, briefings, voiceGenerate, status, japanese, reviews);
 const channels = new Channels();
 const telegram = config.telegram.token ? new Telegram(config.telegram, secretary) : null;
 const files = new FileHost(config.publicUrl);

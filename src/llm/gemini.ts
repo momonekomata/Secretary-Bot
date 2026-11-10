@@ -12,6 +12,15 @@ export function geminiGenerate(apiKey: string): GenerateContent {
   return (params) => ai.models.generateContent(params);
 }
 
+/**
+ * Gemini for voice: speech (TTS) and voice-note transcription. The SDK talks to the stable "v1" API by default,
+ * which has no speechConfig ("Unknown name speechConfig at generation_config"); speech needs "v1beta".
+ */
+export function geminiVoiceGenerate(apiKey: string): GenerateContent {
+  const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
+  return (params) => ai.models.generateContent(params);
+}
+
 const LEVELS: Record<Effort, ThinkingLevel> = { low: ThinkingLevel.LOW, medium: ThinkingLevel.MEDIUM, high: ThinkingLevel.HIGH };
 
 export function geminiUsage(model: string, res: GenerateContentResponse): Usage {

@@ -77,6 +77,35 @@ export interface Speech {
 }
 
 /** Turns text into speech with a Gemini TTS model (16-bit mono PCM). */
+/**
+ * Gemini speech models to try, in order. The first that works is remembered; TTS_MODEL (if set) is tried first.
+ * Names change between Gemini releases, so a model that isn't available on the key just moves on to the next.
+ */
+export const TTS_MODELS = ['gemini-3.8-flash-tts', 'gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-flash-tts'];
+
+/** Gemini's prebuilt voices (speech generation docs). */
+export const TTS_VOICES = [
+  'Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir', 'Leda', 'Orus', 'Aoede', 'Callirrhoe', 'Autonoe', 'Enceladus', 'Iapetus', 'Umbriel', 'Algieba', 'Despina',
+  'Erinome', 'Algenib', 'Rasalgethi', 'Laomedeia', 'Achernar', 'Alnilam', 'Schedar', 'Gacrux', 'Pulcherrima', 'Achird', 'Zubenelgenubi', 'Vindemiatrix',
+  'Sadachbia', 'Sadaltager', 'Sulafat',
+];
+
+/** The voice's proper name if it is one of Gemini's listed voices (any letter case), else null. */
+export function findVoice(name: string): string | null {
+  return TTS_VOICES.find((v) => v.toLowerCase() === name.trim().toLowerCase()) ?? null;
+}
+
+/** A name that could be a voice: a listed one (properly capitalised), or any other plain name (newer models add voices). */
+export function voiceName(name: string): string | null {
+  return findVoice(name) ?? (/^[A-Za-z][\w-]{1,30}$/.test(name.trim()) ? name.trim() : null);
+}
+
+/** True when an error means the model itself isn't available (wrong name, retired, or no audio output). */
+export function modelUnavailable(e: unknown): boolean {
+  const m = String((e as Error)?.message ?? e);
+  return /\b404\b|NOT_FOUND|not found|is not supported|not supported for|does not support|response modalit|AUDIO.*not/i.test(m);
+}
+
 export async function synthesize(generate: GenerateContent, model: string, voice: string, text: string, onUsage: (u: Usage) => void): Promise<Speech | null> {
   const res = await generate({
     model,

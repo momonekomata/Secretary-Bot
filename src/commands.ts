@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { findVoice, TTS_VOICES, voiceName } from './audio';
 import { join } from 'node:path';
 import { BudgetExceeded, type Agent } from './agent';
 import { archiveUsage, usageStats, type Briefings } from './briefings';
@@ -541,16 +542,48 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         };
       }
       case '/ttsvoice': {
-        if (!/^[A-Za-z][\w-]{1,30}$/.test(arg)) {
+        // Popular voices with their style (from Gemini's voice list); any of the 30 can be typed.
+        const styles: [string, string, string][] = [
+          ['Kore', 'firm', 'หนักแน่น'],
+          ['Puck', 'upbeat', 'สดใส'],
+          ['Charon', 'informative', 'ชัดเจน'],
+          ['Fenrir', 'excitable', 'ตื่นเต้น'],
+          ['Leda', 'youthful', 'อ่อนวัย'],
+          ['Aoede', 'breezy', 'สบายๆ'],
+          ['Zephyr', 'bright', 'สว่างใส'],
+          ['Orus', 'firm', 'มั่นคง'],
+        ];
+        const current = voiceName(store.settings().ttsVoice ?? '') ?? voiceName(cfg.ttsVoice) ?? 'Kore';
+        const buttons = (chosen: string): Button[][] => {
+          const all = styles.map(([v, en, th]) => ({ label: `${v === chosen ? '✅ ' : ''}${v} · ${t(en, th)}`, command: `/ttsvoice ${v}` }));
+          return [all.slice(0, 2), all.slice(2, 4), all.slice(4, 6), all.slice(6, 8)];
+        };
+        const others = TTS_VOICES.filter((v) => !styles.some(([s]) => s === v)).join(', ');
+        if (!arg) {
           return {
             text: t(
-              'Which voice? e.g. /ttsvoice Puck. Some Gemini voices: Kore, Puck, Charon, Fenrir, Leda, Aoede, Zephyr, Orus. Try one with /say hello.',
-              'ใช้เสียงไหนดี? เช่น /ttsvoice Puck เสียงของ Gemini มีเช่น Kore, Puck, Charon, Fenrir, Leda, Aoede, Zephyr, Orus ลองฟังได้ด้วย /say hello',
+              `🔊 Voice for spoken replies: ${current}\nTap one to hear it. Other voices: ${others} (e.g. /ttsvoice Sulafat).`,
+              `🔊 เสียงที่ใช้ตอบ: ${current}\nแตะเพื่อฟังตัวอย่าง เสียงอื่นๆ: ${others} (เช่น /ttsvoice Sulafat)`,
             ),
+            buttons: buttons(current),
           };
         }
-        store.updateSettings({ ttsVoice: arg });
-        return { text: t(`✅ Spoken replies will use the ${arg} voice.`, `✅ จะใช้เสียง ${arg} ในการตอบเป็นเสียง`), speak: t(`Hello! This is how I sound now.`, 'สวัสดี! ตอนนี้เสียงของฉันเป็นแบบนี้นะ') };
+        const voice = voiceName(arg);
+        if (!voice) {
+          return {
+            text: t(`"${arg}" isn't a voice name. Pick one below, or one of: ${others}.`, `"${arg}" ไม่ใช่ชื่อเสียง เลือกด้านล่าง หรือหนึ่งในนี้: ${others}`),
+            buttons: buttons(current),
+          };
+        }
+        const unlisted = findVoice(voice)
+          ? ''
+          : t(` ${voice} isn't in my list of Gemini voices; if you hear nothing, pick one below.`, ` ${voice} ไม่อยู่ในรายชื่อเสียงของ Gemini ที่ฉันรู้จัก ถ้าไม่มีเสียง ให้เลือกจากด้านล่าง`);
+        store.updateSettings({ ttsVoice: voice });
+        return {
+          text: t(`✅ Spoken replies will use the ${voice} voice. Here's a sample.`, `✅ จะใช้เสียง ${voice} ในการตอบเป็นเสียง นี่คือตัวอย่าง`) + unlisted,
+          speak: t(`Hello! This is how I sound now.`, 'สวัสดี! ตอนนี้เสียงของฉันเป็นแบบนี้นะ'),
+          buttons: buttons(voice),
+        };
       }
       // --- Japanese ---
       case '/kanji':
