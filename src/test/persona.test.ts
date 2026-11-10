@@ -57,7 +57,8 @@ describe('personality', () => {
     const s = new Secretary(cfg, store, agent, briefings, generate, async () => '');
     expect(await s.speech('🎉 Great job today!')).toMatchObject({ rate: 24000 });
     expect(calls[0].config).toMatchObject({ speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } } });
-    expect(JSON.stringify(calls[0].contents)).toContain('Say cheerfully and with energy: Great job today!');
+    // Gemini 3.8 reads the text as the exact words: the style goes in speechMetadata, not into the text.
+    expect(calls[0].contents).toEqual([{ role: 'user', parts: [{ text: 'Great job today!', speechMetadata: { style: 'cheerfully and with energy' } }] }]);
 
     expect((await runCommand('/ttsvoice Zephyr', ctx))!.speak).toBeTruthy();
     expect(store.settings().ttsVoice).toBe('Zephyr');

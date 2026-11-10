@@ -46,7 +46,8 @@ describe('/voices', () => {
     store.updateSettings({ ttsVoice: 'Kore', speakingStyle: 'calmly' });
     await new Secretary(cfg, store, agent, briefings, generate, async () => '').speech(SAMPLE_LINE, { voice: 'Leda', style: CUTE_STYLE });
     expect(JSON.stringify(calls[0].config)).toContain('"voiceName":"Leda"');
-    expect(JSON.stringify(calls[0].contents)).toContain(`Say ${CUTE_STYLE}: こんにちは`);
+    expect(calls[0].contents).toEqual([{ role: 'user', parts: [{ text: SAMPLE_LINE, speechMetadata: { style: CUTE_STYLE } }] }]);
+    expect(JSON.stringify(calls[0].contents)).not.toContain('Say ');
   });
 });
 
@@ -93,5 +94,28 @@ describe('Telegram voice samples', () => {
     await tg.handleUpdate(update);
     expect(tries).toBe(hasFfmpeg() ? 3 : 0);
     expect(sent.at(-1)!.text).toMatch(/^Pick one:\n\n🔇 I couldn't make the voice reply: /);
+  });
+});
+
+describe('speaking style', () => {
+  it('goes in the text only for older speech models, and is dropped if the API rejects the style field', async () => {
+    const { styleInText, synthesize } = await import('../audio');
+    expect(styleInText('gemini-3.8-flash-tts')).toBe(false);
+    expect(styleInText('gemini-3.1-flash-tts-preview')).toBe(true);
+    expect(styleInText('gemini-2.5-flash-preview-tts')).toBe(true);
+    const ok = () => geminiRes([{ inlineData: { mimeType: 'audio/L16;rate=24000', data: Buffer.alloc(9600).toString('base64') } }]);
+    const old = fakeGemini([ok()]);
+    await synthesize(old.generate, 'gemini-2.5-flash-preview-tts', 'Kore', 'Hello', () => undefined, 'warmly');
+    expect(old.calls[0].contents).toEqual([{ role: 'user', parts: [{ text: 'Say warmly: Hello' }] }]);
+
+    const { store, cfg, agent, briefings } = setup();
+    store.updateSettings({ speakingStyle: CUTE_STYLE });
+    const rejected = new Error('Invalid JSON payload received. Unknown name "speechMetadata" at \'contents[0].parts[0]\': Cannot find field.');
+    const { generate, calls } = fakeGemini([rejected, ok(), ok()]);
+    const s = new Secretary(cfg, store, agent, briefings, generate, async () => '');
+    expect(await s.speech('Hello')).toBeTruthy();
+    expect(calls[1].contents).toEqual([{ role: 'user', parts: [{ text: 'Hello' }] }]);
+    await s.speech('Again'); // remembered: no more failed tries
+    expect(calls[2].contents).toEqual([{ role: 'user', parts: [{ text: 'Again' }] }]);
   });
 });

@@ -109,23 +109,39 @@ export function modelUnavailable(e: unknown): boolean {
   return /\b404\b|NOT_FOUND|not found|is not supported|not supported for|does not support|response modalit|AUDIO.*not/i.test(m);
 }
 
-export async function synthesize(generate: GenerateContent, model: string, voice: string, text: string, onUsage: (u: Usage) => void): Promise<Speech | null> {
+/** Older speech models (before 3.8) take delivery direction inside the text ("Say cheerfully: …"). */
+export function styleInText(model: string): boolean {
+  return /^gemini-(2\.|3\.[0-7]\b)/.test(model);
+}
+
+/** True when the API rejected the separate style field, so the clip should be retried without it. */
+export function styleRejected(e: unknown): boolean {
+  return /speech_?metadata/i.test(String((e as Error)?.message ?? e));
+}
+
+/**
+ * Speaks `text` with a Gemini voice. `style` (how to speak, e.g. "cute and cheerful") goes in the part's
+ * speechMetadata for Gemini 3.8, which reads the text strictly as a transcript (a "Say …:" prefix would be spoken
+ * aloud); older models get it as a prefix in the text instead.
+ */
+export async function synthesize(generate: GenerateContent, model: string, voice: string, text: string, onUsage: (u: Usage) => void, style = ''): Promise<Speech | null> {
+  const part = !style ? { text } : styleInText(model) ? { text: `Say ${style}: ${text}` } : { text, speechMetadata: { style } };
   const res = await generate({
     model,
-    contents: [{ role: 'user', parts: [{ text }] }],
+    contents: [{ role: 'user', parts: [part] }],
     config: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
   });
   onUsage(geminiUsage(model, res));
-  const part = res.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
-  if (!part?.inlineData?.data) return null;
-  const raw = Buffer.from(part.inlineData.data, 'base64');
+  const audio = res.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
+  if (!audio?.inlineData?.data) return null;
+  const raw = Buffer.from(audio.inlineData.data, 'base64');
   // Older models send raw 16-bit PCM ("audio/L16;rate=24000"); Gemini 3.8 sends a WAV file ("audio/wav") whose
   // sound is followed by a C2PA content-credentials section: play only the WAV's sound, or that section is static.
   const fromWav = readWav(raw);
   if (raw.subarray(0, 4).toString('latin1') === 'RIFF' && !fromWav) throw new Error('Gemini sent a WAV file I could not read.');
-  const rate = fromWav?.rate ?? Number(/rate=(\d+)/.exec(part.inlineData.mimeType ?? '')?.[1] ?? 24000);
+  const rate = fromWav?.rate ?? Number(/rate=(\d+)/.exec(audio.inlineData.mimeType ?? '')?.[1] ?? 24000);
   const pcm = cleanTail(fromWav?.pcm ?? raw, rate);
-  return { pcm, rate, durationMs: Math.round((pcm.length / 2 / rate) * 1000), raw, mimeType: part.inlineData.mimeType ?? '' };
+  return { pcm, rate, durationMs: Math.round((pcm.length / 2 / rate) * 1000), raw, mimeType: audio.inlineData.mimeType ?? '' };
 }
 
 /**
