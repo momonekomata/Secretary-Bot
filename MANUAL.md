@@ -372,7 +372,7 @@ Rules that apply to every reply, in every personality and roleplay:
 - `/prefs` to see them, `/prefs remove 2` to remove one, `/prefs clear` to remove all.
 - Or just say "from now on, keep answers short"; the bot saves it itself.
 - **WaniKani reviews** use fixed messages (no AI, so they stay free). They switch to Thai when one of your preferences asks for Thai. Answers are still the English meanings WaniKani grades, and its 💡 mnemonics stay in English.
-- Other command replies (`/budget`, `/food`, `/limit`, `/todo`…) are fixed English text; everything the AI writes follows your preferences.
+- **All fixed messages** (command replies and buttons, `/budget`, `/food`, `/limit`, alerts, reminders, errors, `/status`) and the Telegram **/** menu also switch to Thai when a preference asks for Thai, without using the AI. Everything the AI writes follows all your preferences.
 
 ### 13.3 Roleplay and companion chat
 `/roleplay` offers these scenes, or `/roleplay <describe your own>`:

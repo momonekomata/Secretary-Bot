@@ -3,6 +3,7 @@ import { archiveUsage, type Briefings } from './briefings';
 import type { Channels } from './channel';
 import type { Config } from './config';
 import type { HealthData } from './healthdb';
+import { lang, t } from './i18n';
 import type { JapaneseDaily } from './japanese';
 import type { Store } from './store';
 import { localClock, nextOccurrence, parseHHMM } from './time';
@@ -12,10 +13,28 @@ import { fetchWaniKani } from './wanikani';
 
 export function nudgeText(lessons: number, reviews: number, level: number): string | null {
   if (!lessons && !reviews) return null;
+  if (lang() === 'th') {
+    const th = [reviews ? `รีวิว ${reviews} ข้อ` : '', lessons ? `บทเรียน ${lessons} บท` : ''].filter(Boolean).join(' และ');
+    return `🔥 ภารกิจประจำวัน: มี${th} รออยู่ใน WaniKani (เลเวล ${level}) がんばって！`;
+  }
   const parts = [reviews ? `${reviews} review${reviews === 1 ? '' : 's'}` : '', lessons ? `${lessons} lesson${lessons === 1 ? '' : 's'}` : '']
     .filter(Boolean)
     .join(' and ');
   return `🔥 Daily quest: you have ${parts} waiting on WaniKani (level ${level}). がんばって！`;
+}
+
+/** The message sent when a reminder is due. */
+export function reminderText(text: string): string {
+  return t(`⏰ ${text}`, `⏰ แจ้งเตือน: ${text}`);
+}
+
+/** The once-a-day air quality alert. */
+export function aqiAlertText(city: string, usAqi: number, pm25: number): string {
+  const cat = aqiCategory(usAqi);
+  return t(
+    `😷 Air quality alert for ${city}: US AQI ${usAqi} (${cat.label}), PM2.5 ${pm25.toFixed(1)} µg/m³.\n${cat.advice}`,
+    `😷 แจ้งเตือนคุณภาพอากาศที่ ${city}: US AQI ${usAqi} (${cat.label}) PM2.5 ${pm25.toFixed(1)} µg/m³\n${cat.advice}`,
+  );
 }
 
 /** A job that runs once a day at a local time, optionally only on one weekday. */
@@ -64,7 +83,7 @@ export class Scheduler {
         const text = await make(chat);
         if (text) await this.channels.send(chat, text);
       } catch (e) {
-        const msg = e instanceof BudgetExceeded ? e.message : `Scheduled message failed: ${(e as Error).message}`;
+        const msg = e instanceof BudgetExceeded ? e.message : t(`Scheduled message failed: ${(e as Error).message}`, `ส่งข้อความตามเวลาไม่สำเร็จ: ${(e as Error).message}`);
         this.log(`Job for ${chat} failed:`, (e as Error).message);
         await this.channels.send(chat, msg).catch(() => undefined);
       }
@@ -81,7 +100,11 @@ export class Scheduler {
         run: async () => {
           const backup = archiveUsage(this.store, this.cfg.dataDir, this.cfg.billing.retentionDays, new Date());
           if (!backup) return;
-          const caption = `🧹 Nightly cleanup: archived ${backup.rows} usage log rows older than ${this.cfg.billing.retentionDays} days.`;
+          const days = this.cfg.billing.retentionDays;
+          const caption = t(
+            `🧹 Nightly cleanup: archived ${backup.rows} usage log rows older than ${days} days.`,
+            `🧹 เก็บกวาดประจำคืน: เก็บบันทึกการใช้งานที่เก่ากว่า ${days} วันไว้ในไฟล์สำรองแล้ว ${backup.rows} แถว`,
+          );
           for (const chat of this.cfg.notifyChats) await this.channels.sendFile(chat, backup.name, backup.data, caption).catch(() => undefined);
         },
       },
@@ -131,7 +154,7 @@ export class Scheduler {
         const next = nextOccurrence(new Date(r.dueAt), r.repeat, this.cfg.timezone, now);
         if (next) this.store.rescheduleReminder(r, next);
       }
-      await this.channels.send(r.chatKey, `⏰ ${r.text}`).catch((e) => this.log(`Reminder #${r.id} failed:`, (e as Error).message));
+      await this.channels.send(r.chatKey, reminderText(r.text)).catch((e) => this.log(`Reminder #${r.id} failed:`, (e as Error).message));
     }
     const day = localClock(now, this.cfg.timezone).day;
     for (const job of this.jobs) {
@@ -184,8 +207,7 @@ export class Scheduler {
     const aq = await airQuality(city);
     if (aq.usAqi <= threshold) return;
     this.store.markRan('aqi-alert', day);
-    const cat = aqiCategory(aq.usAqi);
-    const text = `😷 Air quality alert for ${city.name}: US AQI ${aq.usAqi} (${cat.label}), PM2.5 ${aq.pm25.toFixed(1)} µg/m³.\n${cat.advice}`;
+    const text = aqiAlertText(city.name, aq.usAqi, aq.pm25);
     for (const chat of this.cfg.notifyChats) await this.channels.send(chat, text).catch(() => undefined);
   }
 }

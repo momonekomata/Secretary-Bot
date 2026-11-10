@@ -5,9 +5,17 @@ import { chunkText } from './chunk';
 import type { Button } from './commands';
 import type { Config } from './config';
 import { hasFfmpeg, toM4a } from './audio';
-import { MAX_FILE_BYTES, UserFacingError } from './documents';
+import { fileTooBig, MAX_FILE_BYTES, UserFacingError, voiceTooLong } from './documents';
+import { t } from './i18n';
 import type { FileHost } from './files';
 import type { AudioInput } from './voice';
+
+/** Where to get a file the bot made: a download link, or where it was saved when there is no public address. */
+function fileNote(name: string, link: string | null): string {
+  return link
+    ? `⬇️ ${link}\n${t('(link works for 7 days)', '(ลิงก์ใช้ได้ 7 วัน)')}`
+    : t(`(Saved on the bot as backups/${name}.)`, `(บันทึกไว้ในบอทที่ backups/${name})`);
+}
 
 interface LineSource {
   type: 'user' | 'group' | 'room';
@@ -86,7 +94,7 @@ export class Line implements Channel {
   /** LINE can't take file uploads from bots: send a download link (needs PUBLIC_URL). */
   async sendFile(to: string, name: string, data: Buffer, caption: string) {
     const link = this.files?.enabled ? this.files.add(name, 'application/octet-stream', data, 7 * 24 * 3600_000) : null;
-    await this.send(to, link ? `${caption}\n⬇️ ${link}\n(link works for 7 days)` : `${caption}\n(Saved on the bot as backups/${name}.)`);
+    await this.send(to, `${caption}\n${fileNote(name, link)}`);
   }
 
   /** A LINE audio message for `text`, when spoken replies are possible (Gemini key, ffmpeg, PUBLIC_URL). */
@@ -163,7 +171,7 @@ export class Line implements Channel {
       if (allowed && ev.message.type === 'audio') incoming.audio = await this.downloadAudio(ev.message.id);
       if (allowed && ev.message.type === 'file') {
         const name = ev.message.fileName ?? 'file';
-        if ((ev.message.fileSize ?? 0) > MAX_FILE_BYTES) throw new UserFacingError(`${name} is too big for me (max about 15 MB).`);
+        if ((ev.message.fileSize ?? 0) > MAX_FILE_BYTES) throw new UserFacingError(fileTooBig(name));
         const { type, buf } = await this.content(ev.message.id);
         incoming.file = { name, mime: type || 'application/octet-stream', data: buf };
       }
@@ -172,7 +180,7 @@ export class Line implements Channel {
         let text = reply.text;
         if (reply.file) {
           const link = this.files?.enabled ? this.files.add(reply.file.name, 'application/octet-stream', reply.file.data, 7 * 24 * 3600_000) : null;
-          text += link ? `\n⬇️ ${link}\n(link works for 7 days)` : `\n(Saved on the bot as backups/${reply.file.name}.)`;
+          text += `\n${fileNote(reply.file.name, link)}`;
         }
         const audio = reply.speak ? await this.audioMessage(reply.speak) : null;
         if (reply.speak && !audio && !text) text = reply.speak;
@@ -232,7 +240,7 @@ export class Line implements Channel {
 
   private async downloadAudio(messageId: string): Promise<AudioInput> {
     const { type, buf } = await this.content(messageId);
-    if (buf.length > MAX_AUDIO_BYTES) throw new UserFacingError('That voice note is too long for me (max about 15 MB).');
+    if (buf.length > MAX_AUDIO_BYTES) throw new UserFacingError(voiceTooLong());
     // LINE voice messages are M4A; toGeminiAudio converts them with ffmpeg.
     return { mimeType: !type || type === 'application/octet-stream' ? 'audio/m4a' : type, data: buf.toString('base64') };
   }

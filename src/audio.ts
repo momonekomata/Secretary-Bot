@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { UserFacingError } from './documents';
+import { t } from './i18n';
 import { geminiUsage, type GenerateContent } from './llm/gemini';
 import type { Usage } from './models';
 import type { AudioInput } from './voice';
@@ -50,7 +51,7 @@ export async function toGeminiAudio(a: AudioInput): Promise<AudioInput> {
   if (!hasFfmpeg()) {
     // Best effort: M4A holds AAC audio, which Gemini may accept.
     if (/m4a|mp4/.test(mime)) return { ...a, mimeType: 'audio/aac' };
-    throw new UserFacingError(`I can't read ${mime} audio without ffmpeg installed on the bot.`);
+    throw new UserFacingError(t(`I can't read ${mime} audio without ffmpeg installed on the bot.`, `อ่านไฟล์เสียง ${mime} ไม่ได้ เพราะบอทยังไม่ได้ติดตั้ง ffmpeg`));
   }
   const out = await ffmpeg(Buffer.from(a.data, 'base64'), mime.includes('m4a') || mime.includes('mp4') ? 'm4a' : 'bin', 'ogg', ['-ac', '1', '-c:a', 'libopus', '-b:a', '32k']);
   return { mimeType: 'audio/ogg', data: out.toString('base64') };

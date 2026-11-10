@@ -1,4 +1,5 @@
 import { inflateRawSync } from 'node:zlib';
+import { t } from './i18n';
 
 /** Reads one file out of a ZIP archive (enough for .docx; no encryption or ZIP64). */
 export function unzipEntry(zip: Buffer, wanted: string): Buffer | null {
@@ -81,6 +82,16 @@ export const MAX_DOC_TEXT = 100_000;
 
 export const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
+/** The user-facing message for a file over MAX_FILE_BYTES. */
+export function fileTooBig(name: string): string {
+  return t(`${name} is too big for me (max about 15 MB).`, `ไฟล์ ${name} ใหญ่เกินไป (สูงสุดประมาณ 15 MB)`);
+}
+
+/** The user-facing message for a voice note over the audio size limit. */
+export function voiceTooLong(): string {
+  return t('That voice note is too long for me (max about 15 MB).', 'ข้อความเสียงนี้ยาวเกินไป (สูงสุดประมาณ 15 MB)');
+}
+
 export interface FileInput {
   images?: { mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'; data: string }[];
   documents?: DocumentInput[];
@@ -90,7 +101,7 @@ export interface FileInput {
 
 /** Turns a file the user sent into something the AI can read. Throws a user-facing error for unsupported files. */
 export function fileToInput(name: string, mime: string, buf: Buffer): FileInput {
-  if (buf.length > MAX_FILE_BYTES) throw new UserFacingError(`${name} is too big for me (max about 15 MB).`);
+  if (buf.length > MAX_FILE_BYTES) throw new UserFacingError(fileTooBig(name));
   const kind = documentKind(name, mime);
   const cut = (t: string) => (t.length > MAX_DOC_TEXT ? `${t.slice(0, MAX_DOC_TEXT)}\n[…cut]` : t);
   switch (kind) {
@@ -103,7 +114,12 @@ export function fileToInput(name: string, mime: string, buf: Buffer): FileInput 
     case 'text':
       return { text: `[File ${name}]\n${cut(buf.toString('utf8'))}` };
     default:
-      throw new UserFacingError(`I can't read ${name} yet. PDF, Word (.docx), text/CSV files and images work; for spreadsheets, upload to Google Sheets or send a CSV.`);
+      throw new UserFacingError(
+        t(
+          `I can't read ${name} yet. PDF, Word (.docx), text/CSV files and images work; for spreadsheets, upload to Google Sheets or send a CSV.`,
+          `ยังอ่านไฟล์ ${name} ไม่ได้ ไฟล์ที่อ่านได้คือ PDF, Word (.docx), ไฟล์ข้อความ/CSV และรูปภาพ ถ้าเป็นสเปรดชีต อัปโหลดขึ้น Google Sheets หรือส่งเป็น CSV แทนนะ`,
+        ),
+      );
   }
 }
 

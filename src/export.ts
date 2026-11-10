@@ -1,5 +1,6 @@
 import { deflateRawSync } from 'node:zlib';
 import type { HealthDb } from './healthdb';
+import { t } from './i18n';
 import { flowOf } from './money';
 import type { Store } from './store';
 import { formatTime, localClock } from './time';
@@ -166,12 +167,19 @@ export function buildExport(store: Store, db: HealthDb, chatKey: string, timeZon
   return {
     name: `secretary-bot-export-${stamp}.zip`,
     data: zip(files, now),
-    summary:
+    summary: t(
       `💾 Your data as of ${formatTime(now, timeZone)}:\n` +
-      `• food_diary.csv: ${food.length} entries\n• weight.csv: ${weights.length} weigh-ins\n• money.csv: ${money.length} transactions\n` +
-      `• health_daily.csv: ${days.length} days (sleep, steps, calories, heart rate, weight…)\n` +
-      `• workouts.csv, samsung_food_log.csv, memories.csv (${memories.length}), ai_usage.csv\n` +
-      '• profile_and_settings.json: body profile, budget, personality, preferences, to-dos, reminders\n' +
-      'CSV files open in Excel, Google Sheets or Numbers.',
+        `• food_diary.csv: ${food.length} entries\n• weight.csv: ${weights.length} weigh-ins\n• money.csv: ${money.length} transactions\n` +
+        `• health_daily.csv: ${days.length} days (sleep, steps, calories, heart rate, weight…)\n` +
+        `• workouts.csv, samsung_food_log.csv, memories.csv (${memories.length}), ai_usage.csv\n` +
+        '• profile_and_settings.json: body profile, budget, personality, preferences, to-dos, reminders\n' +
+        'CSV files open in Excel, Google Sheets or Numbers.',
+      `💾 ข้อมูลของคุณ ณ ${formatTime(now, timeZone)}:\n` +
+        `• food_diary.csv: ${food.length} รายการ\n• weight.csv: ชั่งน้ำหนัก ${weights.length} ครั้ง\n• money.csv: ${money.length} รายการ\n` +
+        `• health_daily.csv: ${days.length} วัน (การนอน ก้าวเดิน แคลอรี่ อัตราการเต้นของหัวใจ น้ำหนัก…)\n` +
+        `• workouts.csv, samsung_food_log.csv, memories.csv (${memories.length}), ai_usage.csv\n` +
+        '• profile_and_settings.json: ข้อมูลร่างกาย งบประมาณ บุคลิก สิ่งที่ตั้งค่าไว้ สิ่งที่ต้องทำ และการเตือน\n' +
+        'ไฟล์ CSV เปิดได้ใน Excel, Google Sheets หรือ Numbers',
+    ),
   };
 }

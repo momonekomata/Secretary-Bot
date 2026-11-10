@@ -1,4 +1,5 @@
 import type { Google } from './google';
+import { t } from './i18n';
 
 /**
  * Reads Samsung Health data that the Health Sync app uploads to Google Drive: folders named
@@ -307,38 +308,58 @@ export class HealthSync {
   }
 }
 
-const dur = (min: number) => `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
+const dur = (min: number) => t(`${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`, `${Math.floor(min / 60)} ชม. ${String(min % 60).padStart(2, '0')} นาที`);
 
 export function formatDay(s: DaySummary): string {
   const parts: string[] = [];
   if (s.sleep) {
     const z = s.sleep;
     parts.push(
-      `slept ${dur(z.asleepMin)} (${z.bedtime}–${z.wake}${z.deepMin || z.remMin ? `; deep ${dur(z.deepMin)}, REM ${dur(z.remMin)}, light ${dur(z.lightMin)}` : ''}; awake ${z.awakeMin} min${z.score ? `; score ${z.score}` : ''})`,
+      t(
+        `slept ${dur(z.asleepMin)} (${z.bedtime}–${z.wake}${z.deepMin || z.remMin ? `; deep ${dur(z.deepMin)}, REM ${dur(z.remMin)}, light ${dur(z.lightMin)}` : ''}; awake ${z.awakeMin} min${z.score ? `; score ${z.score}` : ''})`,
+        `นอนหลับ ${dur(z.asleepMin)} (${z.bedtime}–${z.wake}${z.deepMin || z.remMin ? `; หลับลึก ${dur(z.deepMin)}, REM ${dur(z.remMin)}, หลับตื้น ${dur(z.lightMin)}` : ''}; ตื่นระหว่างคืน ${z.awakeMin} นาที${z.score ? `; คะแนนการนอน ${z.score}` : ''})`,
+      ),
     );
   }
-  if (s.steps !== null) parts.push(`${s.steps.toLocaleString('en-US')} steps`);
-  if (s.heart) parts.push(`heart rate avg ${s.heart.avg} (lowest ${s.heart.min}, highest ${s.heart.max}) bpm`);
-  if (s.oxygen) parts.push(`SpO2 avg ${s.oxygen.avg}% (lowest ${s.oxygen.min}%)`);
+  if (s.steps !== null) parts.push(t(`${s.steps.toLocaleString('en-US')} steps`, `เดิน ${s.steps.toLocaleString('en-US')} ก้าว`));
+  if (s.heart) parts.push(t(`heart rate avg ${s.heart.avg} (lowest ${s.heart.min}, highest ${s.heart.max}) bpm`, `อัตราการเต้นของหัวใจเฉลี่ย ${s.heart.avg} (ต่ำสุด ${s.heart.min}, สูงสุด ${s.heart.max}) bpm`));
+  if (s.oxygen) parts.push(t(`SpO2 avg ${s.oxygen.avg}% (lowest ${s.oxygen.min}%)`, `SpO2 เฉลี่ย ${s.oxygen.avg}% (ต่ำสุด ${s.oxygen.min}%)`));
   if (s.weight) {
     const w = s.weight;
     parts.push(
-      `weighed ${w.kg} kg${w.bodyFatPct ? `, body fat ${w.bodyFatPct.toFixed(1)}%` : ''}${w.skeletalMuscleKg ? `, skeletal muscle ${w.skeletalMuscleKg.toFixed(1)} kg` : ''}${w.bmr ? `, scale BMR ${w.bmr} kcal` : ''}`,
+      t(
+        `weighed ${w.kg} kg${w.bodyFatPct ? `, body fat ${w.bodyFatPct.toFixed(1)}%` : ''}${w.skeletalMuscleKg ? `, skeletal muscle ${w.skeletalMuscleKg.toFixed(1)} kg` : ''}${w.bmr ? `, scale BMR ${w.bmr} kcal` : ''}`,
+        `น้ำหนัก ${w.kg} kg${w.bodyFatPct ? `, ไขมัน ${w.bodyFatPct.toFixed(1)}%` : ''}${w.skeletalMuscleKg ? `, กล้ามเนื้อ ${w.skeletalMuscleKg.toFixed(1)} kg` : ''}${w.bmr ? `, BMR จากเครื่องชั่ง ${w.bmr} kcal` : ''}`,
+      ),
     );
   }
   for (const w of s.workouts) {
-    parts.push(`workout: ${w.type} ${w.minutes} min${w.km ? `, ${w.km} km` : ''}${w.kcal ? `, ${w.kcal} kcal` : ''}${w.avgHr ? `, avg HR ${w.avgHr}` : ''}`);
+    parts.push(
+      t(
+        `workout: ${w.type} ${w.minutes} min${w.km ? `, ${w.km} km` : ''}${w.kcal ? `, ${w.kcal} kcal` : ''}${w.avgHr ? `, avg HR ${w.avgHr}` : ''}`,
+        `ออกกำลังกาย: ${w.type} ${w.minutes} นาที${w.km ? `, ${w.km} km` : ''}${w.kcal ? `, ${w.kcal} kcal` : ''}${w.avgHr ? `, หัวใจเฉลี่ย ${w.avgHr} bpm` : ''}`,
+      ),
+    );
   }
-  if (s.energy) parts.push(`burned ${s.energy.total} kcal (${s.energy.active} active${s.energy.resting ? `, ${s.energy.resting} resting` : ''})`);
+  if (s.energy)
+    parts.push(
+      t(
+        `burned ${s.energy.total} kcal (${s.energy.active} active${s.energy.resting ? `, ${s.energy.resting} resting` : ''})`,
+        `เผาผลาญ ${s.energy.total} kcal (ตอนเคลื่อนไหว ${s.energy.active}${s.energy.resting ? `, ตอนพัก ${s.energy.resting}` : ''})`,
+      ),
+    );
   const x = s.extra;
   if (x) {
     if (x.hrv) parts.push(`HRV ${x.hrv} ms`);
-    if (x.respiratory) parts.push(`breathing ${x.respiratory}/min`);
-    if (x.stress) parts.push(`stress ${x.stress}`);
-    if (x.floors) parts.push(`${x.floors} floors`);
-    if (x.waterMl) parts.push(`water ${x.waterMl} ml`);
-    if (x.bloodPressure) parts.push(`blood pressure ${x.bloodPressure.systolic}/${x.bloodPressure.diastolic}`);
-    if (x.food?.kcal) parts.push(`ate ${x.food.kcal} kcal (Samsung Health food log: ${x.food.items.slice(0, 6).map((i) => i.name).join(', ')}${x.food.items.length > 6 ? ', …' : ''})`);
+    if (x.respiratory) parts.push(t(`breathing ${x.respiratory}/min`, `หายใจ ${x.respiratory} ครั้ง/นาที`));
+    if (x.stress) parts.push(t(`stress ${x.stress}`, `ความเครียด ${x.stress}`));
+    if (x.floors) parts.push(t(`${x.floors} floors`, `ขึ้นบันได ${x.floors} ชั้น`));
+    if (x.waterMl) parts.push(t(`water ${x.waterMl} ml`, `ดื่มน้ำ ${x.waterMl} ml`));
+    if (x.bloodPressure) parts.push(t(`blood pressure ${x.bloodPressure.systolic}/${x.bloodPressure.diastolic}`, `ความดัน ${x.bloodPressure.systolic}/${x.bloodPressure.diastolic}`));
+    if (x.food?.kcal) {
+      const items = `${x.food.items.slice(0, 6).map((i) => i.name).join(', ')}${x.food.items.length > 6 ? ', …' : ''}`;
+      parts.push(t(`ate ${x.food.kcal} kcal (Samsung Health food log: ${items})`, `กินไป ${x.food.kcal} kcal (บันทึกอาหารใน Samsung Health: ${items})`));
+    }
   }
-  return `${s.day}: ${parts.length ? parts.join('; ') : 'no watch data'}`;
+  return `${s.day}: ${parts.length ? parts.join('; ') : t('no watch data', 'ไม่มีข้อมูลจากนาฬิกา')}`;
 }

@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage } from 'node:http';
-import { langFromPreferences, useLanguage } from './i18n';
+import { langFromPreferences, t, useLanguage } from './i18n';
 import { GoogleGenAI } from '@google/genai';
 import { Agent, type Providers } from './agent';
 import { Briefings } from './briefings';
@@ -46,17 +46,24 @@ const japanese = new JapaneseDaily(config, store, agent, undefined, undefined, r
 
 /** /status: what is configured and whether it works. */
 async function status(): Promise<string> {
-  const lines = [`🩺 ${agent.botName} status (version ${config.version})`];
+  const off = t('off', 'ปิด');
+  const lines = [t(`🩺 ${agent.botName} status (version ${config.version})`, `🩺 สถานะ ${agent.botName} (เวอร์ชัน ${config.version})`)];
   const model = modelInfo(agent.model);
-  lines.push(`AI model: ${model.label} (${model.id})${agent.hasProvider(model.provider) ? '' : ' ⚠️ its API key is missing'}`);
-  lines.push(`Gemini key: ${config.geminiKey ? '✅' : '❌ not set (needed for Gemini models and voice notes)'}`);
-  lines.push(`Claude key: ${providers.claude ? '✅' : '— not set (optional)'}`);
+  const keyMissing = agent.hasProvider(model.provider) ? '' : t(' ⚠️ its API key is missing', ' ⚠️ ยังไม่มีคีย์ API ของโมเดลนี้');
+  lines.push(t(`AI model: ${model.label} (${model.id})${keyMissing}`, `โมเดล AI: ${model.label} (${model.id})${keyMissing}`));
+  lines.push(
+    t(
+      `Gemini key: ${config.geminiKey ? '✅' : '❌ not set (needed for Gemini models and voice notes)'}`,
+      `คีย์ Gemini: ${config.geminiKey ? '✅' : '❌ ยังไม่ได้ตั้ง (ต้องใช้กับโมเดล Gemini และข้อความเสียง)'}`,
+    ),
+  );
+  lines.push(t(`Claude key: ${providers.claude ? '✅' : '— not set (optional)'}`, `คีย์ Claude: ${providers.claude ? '✅' : '— ยังไม่ได้ตั้ง (ไม่บังคับ)'}`));
   if (gemini && model.provider === 'gemini') {
     try {
       await gemini.models.get({ model: model.id });
-      lines.push(`Gemini model ${model.id}: ✅ available`);
+      lines.push(t(`Gemini model ${model.id}: ✅ available`, `โมเดล Gemini ${model.id}: ✅ ใช้งานได้`));
     } catch (e) {
-      lines.push(`Gemini model ${model.id}: ❌ ${(e as Error).message.slice(0, 120)}`);
+      lines.push(t(`Gemini model ${model.id}: ❌ ${(e as Error).message.slice(0, 120)}`, `โมเดล Gemini ${model.id}: ❌ ${(e as Error).message.slice(0, 120)}`));
     }
   }
   if (google) {
@@ -65,31 +72,55 @@ async function status(): Promise<string> {
       const missing = google.missing();
       lines.push(
         missing.length
-          ? `Google: ✅ signed in, but without ${missing.join(', ')}. Run \`npm run google-auth\` again to add them.`
-          : 'Google (Calendar, Gmail, Tasks, Drive, Docs, Sheets, Contacts): ✅ signed in',
+          ? t(
+              `Google: ✅ signed in, but without ${missing.join(', ')}. Run \`npm run google-auth\` again to add them.`,
+              `Google: ✅ เชื่อมต่อแล้ว แต่ยังไม่มีสิทธิ์ ${missing.join(', ')} รัน \`npm run google-auth\` อีกครั้งเพื่อเพิ่ม`,
+            )
+          : t('Google (Calendar, Gmail, Tasks, Drive, Docs, Sheets, Contacts): ✅ signed in', 'Google (Calendar, Gmail, Tasks, Drive, Docs, Sheets, Contacts): ✅ เชื่อมต่อแล้ว'),
       );
     } catch (e) {
       lines.push(`Google: ❌ ${(e as Error).message}`);
     }
-  } else lines.push('Google: — not connected (run `npm run google-auth`)');
-  lines.push(`Telegram: ${config.telegram.token ? `✅ ${config.telegram.mode}` : '— off'}  LINE: ${config.line.accessToken ? '✅' : '— off'}`);
+  } else lines.push(t('Google: — not connected (run `npm run google-auth`)', 'Google: — ยังไม่ได้เชื่อมต่อ (รัน `npm run google-auth`)'));
+  lines.push(`Telegram: ${config.telegram.token ? `✅ ${config.telegram.mode}` : `— ${off}`}  LINE: ${config.line.accessToken ? '✅' : `— ${off}`}`);
   const s = store.settings();
-  lines.push(`Personality: ${s.personaKey ?? 'default'}${s.ttsVoice ? `, voice ${s.ttsVoice}` : ''}`);
-  lines.push(`Google Maps: ${maps ? '✅' : '— off (GOOGLE_MAPS_API_KEY)'}  WaniKani: ${config.wanikaniToken ? '✅' : '— off'}`);
-  const voiceMode = store.settings().voiceReplies ?? config.defaultVoiceReplies;
+  const persona = s.personaKey ?? t('default', 'ค่าเริ่มต้น');
   lines.push(
-    `Spoken replies: ${voiceMode}${voiceMode === 'off' ? '' : !config.geminiKey ? ' ⚠️ needs GEMINI_API_KEY' : !hasFfmpeg() ? ' ⚠️ needs ffmpeg' : ` ✅ (${config.ttsModel}, voice ${config.ttsVoice})`}`,
-    `Public address: ${config.publicUrl || '— not set (LINE needs PUBLIC_URL for its webhook, voice replies and file links)'}`,
+    t(`Personality: ${persona}${s.ttsVoice ? `, voice ${s.ttsVoice}` : ''}`, `บุคลิก: ${persona}${s.ttsVoice ? `, เสียง ${s.ttsVoice}` : ''}`),
   );
+  lines.push(`Google Maps: ${maps ? '✅' : `— ${off} (GOOGLE_MAPS_API_KEY)`}  WaniKani: ${config.wanikaniToken ? '✅' : `— ${off}`}`);
+  const voiceMode = store.settings().voiceReplies ?? config.defaultVoiceReplies;
+  const voiceState =
+    voiceMode === 'off'
+      ? ''
+      : !config.geminiKey
+        ? t(' ⚠️ needs GEMINI_API_KEY', ' ⚠️ ต้องมี GEMINI_API_KEY')
+        : !hasFfmpeg()
+          ? t(' ⚠️ needs ffmpeg', ' ⚠️ ต้องมี ffmpeg')
+          : t(` ✅ (${config.ttsModel}, voice ${config.ttsVoice})`, ` ✅ (${config.ttsModel}, เสียง ${config.ttsVoice})`);
   lines.push(
-    `Scheduled messages go to: ${config.notifyChats.join(', ') || '⚠️ nobody (set BOT_NOTIFY_CHATS to your chat from /id)'}`,
-    `Kanji & word of the day ${config.schedule.japanese || 'off'}, weather ${config.schedule.weather || 'off'}, briefing ${config.schedule.briefing || 'off'}, weekend planner ${config.schedule.weekendDay} ${config.schedule.weekend || 'off'}, cleanup ${config.schedule.cleanup || 'off'} (${config.timezone})`,
+    t(`Spoken replies: ${voiceMode}${voiceState}`, `การตอบเป็นเสียง: ${voiceMode}${voiceState}`),
+    t(
+      `Public address: ${config.publicUrl || '— not set (LINE needs PUBLIC_URL for its webhook, voice replies and file links)'}`,
+      `ที่อยู่สาธารณะ: ${config.publicUrl || '— ยังไม่ได้ตั้ง (LINE ต้องใช้ PUBLIC_URL สำหรับ webhook การตอบเป็นเสียง และลิงก์ไฟล์)'}`,
+    ),
+  );
+  const sc = config.schedule;
+  lines.push(
+    t(
+      `Scheduled messages go to: ${config.notifyChats.join(', ') || '⚠️ nobody (set BOT_NOTIFY_CHATS to your chat from /id)'}`,
+      `ข้อความตามเวลาส่งไปที่: ${config.notifyChats.join(', ') || '⚠️ ยังไม่มีใคร (ตั้ง BOT_NOTIFY_CHATS เป็นแชตของคุณจาก /id)'}`,
+    ),
+    t(
+      `Kanji & word of the day ${sc.japanese || 'off'}, weather ${sc.weather || 'off'}, briefing ${sc.briefing || 'off'}, weekend planner ${sc.weekendDay} ${sc.weekend || 'off'}, cleanup ${sc.cleanup || 'off'} (${config.timezone})`,
+      `คันจิและคำศัพท์ประจำวัน ${sc.japanese || off}, อากาศ ${sc.weather || off}, สรุปตอนเช้า ${sc.briefing || off}, วางแผนวันหยุด ${sc.weekendDay} ${sc.weekend || off}, เก็บกวาด ${sc.cleanup || off} (${config.timezone})`,
+    ),
   );
   const b = agent.limits();
   const limits = (l: { warnUsd: number | null; capUsd: number | null }) =>
-    `${l.warnUsd !== null ? `, warn at $${l.warnUsd}` : ''}${l.capUsd !== null ? `, cap $${l.capUsd}` : ''}`;
+    `${l.warnUsd !== null ? t(`, warn at $${l.warnUsd}`, `, แจ้งเตือนที่ $${l.warnUsd}`) : ''}${l.capUsd !== null ? t(`, cap $${l.capUsd}`, `, วงเงิน $${l.capUsd}`) : ''}`;
   lines.push(
-    `Spending today: $${agent.spentToday().toFixed(4)}${limits(b.all)} (change with /limit)`,
+    t(`Spending today: $${agent.spentToday().toFixed(4)}${limits(b.all)} (change with /limit)`, `ค่าใช้จ่ายวันนี้: $${agent.spentToday().toFixed(4)}${limits(b.all)} (เปลี่ยนได้ด้วย /limit)`),
     `  Gemini $${agent.spentToday('gemini').toFixed(4)}${limits(b.gemini)}`,
     `  Claude $${agent.spentToday('claude').toFixed(4)}${limits(b.claude)}`,
   );
@@ -190,7 +221,9 @@ if (config.announceStartup && config.version !== 'dev') {
   if (lastVersion !== config.version) {
     store.markRan('startup-version', config.version);
     for (const chat of config.notifyChats) {
-      void channels.send(chat, `✅ ${agent.botName} updated and running (version ${config.version}).`).catch(() => undefined);
+      void channels
+        .send(chat, t(`✅ ${agent.botName} updated and running (version ${config.version}).`, `✅ ${agent.botName} อัปเดตแล้วและกำลังทำงาน (เวอร์ชัน ${config.version})`))
+        .catch(() => undefined);
     }
   }
 }

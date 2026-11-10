@@ -8,6 +8,7 @@ import { speakable, synthesize, toGeminiAudio, type Speech } from './audio';
 import { fileToInput, UserFacingError } from './documents';
 import type { JapaneseDaily } from './japanese';
 import type { Reviews } from './review';
+import { lang, t } from './i18n';
 import { formatTime } from './time';
 import { airQuality, forecast, formatWeather, reverseGeocode } from './weather';
 import { transcribe, voicePrompt, type AudioInput } from './voice';
@@ -45,7 +46,7 @@ export class Channels {
   async sendFile(chatKey: string, name: string, data: Buffer, caption: string) {
     const [channel, id] = this.resolve(chatKey);
     if (channel.sendFile) await channel.sendFile(id, name, data, caption);
-    else await channel.send(id, `${caption}\n(Saved on the bot as backups/${name}.)`);
+    else await channel.send(id, `${caption}\n${t(`(Saved on the bot as backups/${name}.)`, `(บันทึกไว้ในบอทที่ backups/${name})`)}`);
   }
 }
 
@@ -67,12 +68,21 @@ export interface IncomingMessage {
 export function friendlyError(e: unknown): string {
   if (e instanceof UserFacingError || e instanceof BudgetExceeded) return e.message;
   const status = (e as { status?: number }).status;
-  if (status === 429) return 'The AI service is rate limiting me right now. Try again in a minute.';
-  if (status === 401 || status === 403) return 'My AI API key was rejected. Check GEMINI_API_KEY / ANTHROPIC_API_KEY on the bot.';
-  if (status && status >= 500) return 'The AI service is having trouble right now. Try again shortly.';
+  if (status === 429) return t('The AI service is rate limiting me right now. Try again in a minute.', 'บริการ AI จำกัดการใช้งานอยู่ตอนนี้ ลองใหม่อีกครั้งในอีกสักนาทีนะ');
+  if (status === 401 || status === 403)
+    return t('My AI API key was rejected. Check GEMINI_API_KEY / ANTHROPIC_API_KEY on the bot.', 'คีย์ API ของ AI ถูกปฏิเสธ ลองตรวจ GEMINI_API_KEY / ANTHROPIC_API_KEY ในบอทดูนะ');
+  if (status && status >= 500) return t('The AI service is having trouble right now. Try again shortly.', 'บริการ AI มีปัญหาอยู่ตอนนี้ ลองใหม่อีกสักครู่นะ');
   const msg = (e as Error)?.message ?? '';
-  if (/needs (GEMINI|ANTHROPIC)_API_KEY|Google sign-in|too long for me/.test(msg)) return msg;
-  return 'Something went wrong on my side. Try again, or check the bot logs.';
+  if (/needs (GEMINI|ANTHROPIC)_API_KEY|Google sign-in|too long for me/.test(msg)) return lang() === 'th' ? thaiPassthrough(msg) : msg;
+  return t('Something went wrong on my side. Try again, or check the bot logs.', 'เกิดข้อผิดพลาดฝั่งบอท ลองใหม่อีกครั้ง หรือดู log ของบอท');
+}
+
+/** Thai for the known error messages friendlyError shows as-is (they are thrown in English elsewhere). */
+function thaiPassthrough(msg: string): string {
+  const model = /^The selected model (\S+) needs ((?:GEMINI|ANTHROPIC)_API_KEY)\./.exec(msg);
+  if (model) return `โมเดล ${model[1]} ที่เลือกไว้ต้องใช้ ${model[2]} ตั้งค่าคีย์นี้ หรือเลือกโมเดลอื่นใน /settings`;
+  if (/^Google sign-in has expired or was revoked/.test(msg)) return 'การเชื่อมต่อ Google หมดอายุหรือถูกยกเลิก รัน `npm run google-auth` ใหม่อีกครั้ง';
+  return msg;
 }
 
 /** Platform-independent message handling: access control, commands, voice notes, chat. */
@@ -136,7 +146,13 @@ export class Secretary {
     const allowed = this.allowList(m.platform);
     if (!allowed.length) {
       const name = m.platform === 'telegram' ? 'TELEGRAM_ALLOWED_USERS' : 'LINE_ALLOWED_USERS';
-      return { text: `This bot is not set up yet. Your ${m.platform === 'telegram' ? 'Telegram' : 'LINE'} user id is ${m.userId}. Put it in ${name} (run \`npm run setup\`) and restart the bot.` };
+      const platform = m.platform === 'telegram' ? 'Telegram' : 'LINE';
+      return {
+        text: t(
+          `This bot is not set up yet. Your ${platform} user id is ${m.userId}. Put it in ${name} (run \`npm run setup\`) and restart the bot.`,
+          `บอทนี้ยังไม่ได้ตั้งค่า user id ${platform} ของคุณคือ ${m.userId} ใส่ไว้ใน ${name} (รัน \`npm run setup\`) แล้วรีสตาร์ตบอท`,
+        ),
+      };
     }
     if (!allowed.includes(m.userId)) return null; // a stranger: stay silent
 
@@ -185,7 +201,12 @@ export class Secretary {
     } catch {
       // Weather is a bonus here; the location is saved either way.
     }
-    return `📍 Got it: ${city.name}${city.country ? `, ${city.country}` : ''}. I'll use this for weather, briefings and nearby places (updated ${formatTime(new Date(), this.cfg.timezone)}).${weather}`;
+    const place = `${city.name}${city.country ? `, ${city.country}` : ''}`;
+    const at = formatTime(new Date(), this.cfg.timezone);
+    return t(
+      `📍 Got it: ${place}. I'll use this for weather, briefings and nearby places (updated ${at}).${weather}`,
+      `📍 รับทราบ: ${place} จะใช้ตำแหน่งนี้สำหรับอากาศ สรุปข่าวประจำวัน และสถานที่ใกล้เคียง (อัปเดต ${at})${weather}`,
+    );
   }
 
   /** Spoken version of `text` (Gemini text-to-speech), or null when unavailable. */
@@ -200,18 +221,18 @@ export class Secretary {
   }
 
   private async voice(m: IncomingMessage): Promise<{ text: string; reply?: string }> {
-    if (!this.gemini) return { text: '🎙️ Voice notes need a Gemini API key (GEMINI_API_KEY), even when chatting with Claude.' };
+    if (!this.gemini) return { text: t('🎙️ Voice notes need a Gemini API key (GEMINI_API_KEY), even when chatting with Claude.', '🎙️ ข้อความเสียงต้องใช้คีย์ API ของ Gemini (GEMINI_API_KEY) แม้จะคุยกับ Claude อยู่ก็ตาม') };
     this.agent.checkBudget('gemini');
     const translateTo = this.briefings.translateTo();
     const audio = await toGeminiAudio(m.audio!);
-    const t = await transcribe(this.gemini, this.cfg.voiceModel, audio, translateTo, (u) => this.agent.recordUsage(u, 'voice'));
-    if (!t.transcript.trim()) return { text: "🎙️ I couldn't hear anything in that voice note." };
-    const prompt = voicePrompt(t, translateTo) + (m.text ? `\nThe user added: ${m.text}` : '');
+    const tr = await transcribe(this.gemini, this.cfg.voiceModel, audio, translateTo, (u) => this.agent.recordUsage(u, 'voice'));
+    if (!tr.transcript.trim()) return { text: t("🎙️ I couldn't hear anything in that voice note.", '🎙️ ไม่ได้ยินเสียงอะไรในข้อความเสียงนี้เลย') };
+    const prompt = voicePrompt(tr, translateTo) + (m.text ? `\nThe user added: ${m.text}` : '');
     const reply = await this.agent.reply({ chatKey: m.chatKey, text: prompt, userName: m.userName, kind: 'voice' });
     const text = [
-      `🎙️ Voice note (${t.language})`,
-      `📝 ${t.transcript}`,
-      t.translation ? `🌐 ${translateTo}: ${t.translation}` : '',
+      t(`🎙️ Voice note (${tr.language})`, `🎙️ ข้อความเสียง (${tr.language})`),
+      `📝 ${tr.transcript}`,
+      tr.translation ? `🌐 ${translateTo}: ${tr.translation}` : '',
       '',
       reply,
     ]

@@ -4,7 +4,7 @@ import { chunkText } from './chunk';
 import type { Button, CommandReply } from './commands';
 import type { Config } from './config';
 import { hasFfmpeg, toOggOpus } from './audio';
-import { MAX_FILE_BYTES, UserFacingError } from './documents';
+import { fileTooBig, MAX_FILE_BYTES, UserFacingError, voiceTooLong } from './documents';
 import { lang, type Lang } from './i18n';
 import { menuFor } from './menu';
 import type { AudioInput } from './voice';
@@ -299,12 +299,12 @@ export class Telegram implements Channel {
   private async downloadDocument(f: TgFile): Promise<IncomingMessage['file']> {
     const name = f.file_name ?? 'file';
     // Bots can only download files up to 20 MB from Telegram.
-    if ((f.file_size ?? 0) > MAX_FILE_BYTES) throw new UserFacingError(`${name} is too big for me (max about 15 MB).`);
+    if ((f.file_size ?? 0) > MAX_FILE_BYTES) throw new UserFacingError(fileTooBig(name));
     return { name, mime: f.mime_type ?? 'application/octet-stream', data: await this.download(f.file_id) };
   }
 
   private async downloadAudio(f: TgFile): Promise<AudioInput | undefined> {
-    if ((f.file_size ?? 0) > MAX_AUDIO_BYTES) throw new UserFacingError('That voice note is too long for me (max about 15 MB).');
+    if ((f.file_size ?? 0) > MAX_AUDIO_BYTES) throw new UserFacingError(voiceTooLong());
     // Telegram voice notes are Ogg/Opus, which Gemini reads directly.
     return { mimeType: f.mime_type ?? 'audio/ogg', data: (await this.download(f.file_id)).toString('base64') };
   }

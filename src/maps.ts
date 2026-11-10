@@ -2,6 +2,8 @@
  * Google Maps Platform: Places (New) text search and Routes API travel times.
  * Needs GOOGLE_MAPS_API_KEY with both APIs enabled and billing on the Cloud project.
  */
+import { t } from './i18n';
+
 export interface Place {
   name: string;
   address: string;
@@ -75,8 +77,10 @@ export class Maps {
 }
 
 export function formatPlaces(places: Place[]): string {
-  if (!places.length) return 'No places found.';
+  if (!places.length) return t('No places found.', 'ไม่พบสถานที่');
+  const open = t(', open now', ', เปิดอยู่ตอนนี้');
+  const closed = t(', closed now', ', ปิดอยู่ตอนนี้');
   return places
-    .map((p) => `• ${p.name} — ${p.address}${p.rating ? `, ★${p.rating}` : ''}${p.openNow === undefined ? '' : p.openNow ? ', open now' : ', closed now'}${p.link ? `\n  ${p.link}` : ''}`)
+    .map((p) => `• ${p.name} — ${p.address}${p.rating ? `, ★${p.rating}` : ''}${p.openNow === undefined ? '' : p.openNow ? open : closed}${p.link ? `\n  ${p.link}` : ''}`)
     .join('\n');
 }

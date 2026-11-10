@@ -6,6 +6,7 @@ import { createInterface } from 'node:readline';
 import type { Google } from './google';
 import type { DayRecord, HealthDb } from './healthdb';
 import { splitCsvLine, type Workout } from './healthsync';
+import { t } from './i18n';
 import { localDay } from './time';
 
 /**
@@ -482,15 +483,19 @@ export function extract(archive: string, outDir: string, opts: ExtractOptions = 
         stopped = why;
         p.kill('SIGKILL');
       };
-      const total = setTimeout(() => stop(`Unpacking took longer than ${Math.round(timeoutMs / 60_000)} minutes and was stopped.`), timeoutMs);
-      let idle = setTimeout(() => stop(`Unpacking stalled (no file for ${Math.round(idleMs / 60_000)} minutes) and was stopped.`), idleMs);
+      const total = setTimeout(
+        () => stop(t(`Unpacking took longer than ${Math.round(timeoutMs / 60_000)} minutes and was stopped.`, `แตกไฟล์นานเกิน ${Math.round(timeoutMs / 60_000)} นาที เลยหยุดไว้ก่อน`)),
+        timeoutMs,
+      );
+      const stalled = () => stop(t(`Unpacking stalled (no file for ${Math.round(idleMs / 60_000)} minutes) and was stopped.`, `แตกไฟล์ค้าง (ไม่มีไฟล์ใหม่เลย ${Math.round(idleMs / 60_000)} นาที) เลยหยุดไว้ก่อน`));
+      let idle = setTimeout(stalled, idleMs);
       // Both tools print one line per unpacked file (unar on stdout, bsdtar -v on stderr).
       const onOutput = (d: Buffer) => {
         const files = String(d).split('\n').filter((l) => /\.(csv|json)\b/i.test(l)).length;
         if (!files) return;
         count += files;
         clearTimeout(idle);
-        idle = setTimeout(() => stop(`Unpacking stalled (no file for ${Math.round(idleMs / 60_000)} minutes) and was stopped.`), idleMs);
+        idle = setTimeout(stalled, idleMs);
         opts.onFile?.(count);
       };
       p.stdout.on('data', onOutput);
@@ -550,11 +555,12 @@ export async function importFromDrive(google: Google, db: HealthDb, timeZone: st
   const log = opts.log ?? console.log;
   const every = opts.progressEveryMs ?? 60_000;
   let lastProgress = 0;
-  const step = (message: string, throttled = false) => {
-    log(message);
+  /** Logs the English text; the user gets it in their language. */
+  const step = (en: string, th: string, throttled = false) => {
+    log(en);
     if (throttled && Date.now() - lastProgress < every) return;
     lastProgress = Date.now();
-    opts.progress?.(message);
+    opts.progress?.(t(en, th));
   };
   const mb = (b: number) => Math.round(b / 1e6);
   const files = await google.listFiles(
@@ -563,21 +569,26 @@ export async function importFromDrive(google: Google, db: HealthDb, timeZone: st
     5,
   );
   const file = files[0];
-  if (!file) throw new Error('No Samsung Health export (.zip or .rar with "samsung_health" in its name) found in Google Drive.');
+  if (!file)
+    throw new Error(
+      t('No Samsung Health export (.zip or .rar with "samsung_health" in its name) found in Google Drive.', 'ไม่พบไฟล์ส่งออกของ Samsung Health (.zip หรือ .rar ที่มีคำว่า "samsung_health" ในชื่อ) ใน Google Drive'),
+    );
   const work = mkdtempSync(join(tmpdir(), 'sb-shealth-'));
   try {
-    step(`📦 Found ${file.name}. Downloading from Google Drive…`);
+    step(`📦 Found ${file.name}. Downloading from Google Drive…`, `📦 เจอไฟล์ ${file.name} แล้ว กำลังดาวน์โหลดจาก Google Drive…`);
     const archive = join(work, file.name.endsWith('.zip') ? 'export.zip' : 'export.rar');
     const bytes = await google.downloadToFile(file.id, archive, {
-      onProgress: (b, total) => step(`⬇️ Downloaded ${mb(b)}${total ? ` of ${mb(total)}` : ''} MB…`, true),
+      onProgress: (b, total) => step(`⬇️ Downloaded ${mb(b)}${total ? ` of ${mb(total)}` : ''} MB…`, `⬇️ ดาวน์โหลดแล้ว ${mb(b)}${total ? ` จาก ${mb(total)}` : ''} MB…`, true),
     });
-    step(`📂 Downloaded ${mb(bytes)} MB. Unpacking…`);
+    step(`📂 Downloaded ${mb(bytes)} MB. Unpacking…`, `📂 ดาวน์โหลดเสร็จแล้ว ${mb(bytes)} MB กำลังแตกไฟล์…`);
     const out = join(work, 'out');
-    await extract(archive, out, { onFile: (n) => step(`📂 Unpacking… ${n} data file${n === 1 ? '' : 's'} so far`, true) });
+    await extract(archive, out, { onFile: (n) => step(`📂 Unpacking… ${n} data file${n === 1 ? '' : 's'} so far`, `📂 กำลังแตกไฟล์… ได้ไฟล์ข้อมูลแล้ว ${n} ไฟล์`, true) });
     rmSync(archive, { force: true });
-    step('📖 Unpacked. Reading your health data…');
-    const label = (t: string) => t.replace(/^tracker\./, '').replace(/[._]/g, ' ');
-    const { records, report } = await new SamsungImporter(timeZone, log).importDir(out, (i, n, type) => step(`📖 Reading ${i} of ${n}: ${label(type)}…`, true));
+    step('📖 Unpacked. Reading your health data…', '📖 แตกไฟล์เสร็จแล้ว กำลังอ่านข้อมูลสุขภาพ…');
+    const label = (type: string) => type.replace(/^tracker\./, '').replace(/[._]/g, ' ');
+    const { records, report } = await new SamsungImporter(timeZone, log).importDir(out, (i, n, type) =>
+      step(`📖 Reading ${i} of ${n}: ${label(type)}…`, `📖 กำลังอ่านไฟล์ที่ ${i} จาก ${n}: ${label(type)}…`, true),
+    );
     db.merge(records, false);
     db.noteImport(file.name, Object.keys(records));
     return { file: file.name, ...report };
@@ -589,17 +600,24 @@ export async function importFromDrive(google: Google, db: HealthDb, timeZone: st
 export function formatReport(r: ImportReport, dbDays: number): string {
   const types = Object.entries(r.types)
     .sort(([, a], [, b]) => b.days - a.days)
-    .map(([t, v]) => {
-      const line = `• ${t}: ${v.rows.toLocaleString('en-US')} rows, ${v.days} days`;
+    .map(([type, v]) => {
+      const line = t(`• ${type}: ${v.rows.toLocaleString('en-US')} rows, ${v.days} days`, `• ${type}: ${v.rows.toLocaleString('en-US')} แถว, ${v.days} วัน`);
       // Explain a type that was read but gave no days, so the importer can be adjusted to this export.
       if (v.days || !v.rows || !v.columns) return line;
-      return `${line}\n   columns: ${v.columns.slice(0, 10).join(', ')}${v.columns.length > 10 ? ', …' : ''}${v.sample ? `\n   first time value: ${v.sample}` : ''}`;
+      const columns = `${v.columns.slice(0, 10).join(', ')}${v.columns.length > 10 ? ', …' : ''}`;
+      return t(
+        `${line}\n   columns: ${columns}${v.sample ? `\n   first time value: ${v.sample}` : ''}`,
+        `${line}\n   คอลัมน์: ${columns}${v.sample ? `\n   ค่าเวลาแรก: ${v.sample}` : ''}`,
+      );
     });
+  const skipped = `${r.skipped.slice(0, 12).join(', ')}${r.skipped.length > 12 ? ', …' : ''}`;
   return [
-    `📦 Imported ${r.file}`,
-    r.days ? `${r.days} days of data, ${r.from} to ${r.to}. The history now covers ${dbDays} days.` : 'No usable data found.',
+    t(`📦 Imported ${r.file}`, `📦 นำเข้า ${r.file} แล้ว`),
+    r.days
+      ? t(`${r.days} days of data, ${r.from} to ${r.to}. The history now covers ${dbDays} days.`, `ข้อมูล ${r.days} วัน ตั้งแต่ ${r.from} ถึง ${r.to} ตอนนี้ประวัติครอบคลุม ${dbDays} วัน`)
+      : t('No usable data found.', 'ไม่พบข้อมูลที่ใช้ได้'),
     ...types,
-    r.skipped.length ? `Not used (${r.skipped.length} files): ${r.skipped.slice(0, 12).join(', ')}${r.skipped.length > 12 ? ', …' : ''}` : '',
+    r.skipped.length ? t(`Not used (${r.skipped.length} files): ${skipped}`, `ไม่ได้ใช้ (${r.skipped.length} ไฟล์): ${skipped}`) : '',
   ]
     .filter(Boolean)
     .join('\n');
@@ -615,7 +633,7 @@ export class ImportJob {
    */
   start(run: (progress: (m: string) => void) => Promise<string>, notify: (text: string) => Promise<void>, timeoutMs = 45 * 60_000): boolean {
     if (this.running) return false;
-    const state = { startedAt: Date.now(), stage: 'starting', done: Promise.resolve() };
+    const state = { startedAt: Date.now(), stage: '', done: Promise.resolve() };
     this.running = state;
     const progress = (m: string) => {
       state.stage = m;
@@ -623,11 +641,17 @@ export class ImportJob {
     };
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`The import took longer than ${Math.round(timeoutMs / 60_000)} minutes and was stopped.`)), timeoutMs);
+      timer = setTimeout(
+        () => reject(new Error(t(`The import took longer than ${Math.round(timeoutMs / 60_000)} minutes and was stopped.`, `การนำเข้าใช้เวลานานเกิน ${Math.round(timeoutMs / 60_000)} นาที เลยหยุดไว้ก่อน`))),
+        timeoutMs,
+      );
     });
     state.done = Promise.race([run(progress), timeout])
       .then((report) => notify(report))
-      .catch((e) => notify(`❌ The health import failed: ${(e as Error).message}\nYou can try again with /healthimport.`))
+      .catch((e) => {
+        const msg = (e as Error).message;
+        return notify(t(`❌ The health import failed: ${msg}\nYou can try again with /healthimport.`, `❌ นำเข้าข้อมูลสุขภาพไม่สำเร็จ: ${msg}\nลองใหม่ได้ด้วย /healthimport`));
+      })
       .catch(() => undefined)
       .finally(() => {
         clearTimeout(timer);
@@ -637,9 +661,10 @@ export class ImportJob {
   }
 
   status(): string {
-    if (!this.running) return 'No health import is running.';
+    if (!this.running) return t('No health import is running.', 'ไม่มีการนำเข้าข้อมูลสุขภาพที่กำลังทำอยู่');
     const min = Math.max(0, Math.round((Date.now() - this.running.startedAt) / 60_000));
-    return `📦 A health import is running (started ${min} min ago). Last step: ${this.running.stage}`;
+    const stage = this.running.stage || t('starting', 'กำลังเริ่ม');
+    return t(`📦 A health import is running (started ${min} min ago). Last step: ${stage}`, `📦 กำลังนำเข้าข้อมูลสุขภาพ (เริ่มเมื่อ ${min} นาทีที่แล้ว) ขั้นตอนล่าสุด: ${stage}`);
   }
 }
 
