@@ -83,6 +83,7 @@ async function status(): Promise<string> {
     }
   } else lines.push(t('Google: — not connected (run `npm run google-auth`)', 'Google: — ยังไม่ได้เชื่อมต่อ (รัน `npm run google-auth`)'));
   lines.push(`Telegram: ${config.telegram.token ? `✅ ${config.telegram.mode}` : `— ${off}`}  LINE: ${config.line.accessToken ? '✅' : `— ${off}`}`);
+  if (telegram) lines.push(await telegram.menuStatus().catch((e) => `"/" menu: ❌ ${(e as Error).message}`));
   const s = store.settings();
   const persona = s.personaKey ?? t('default', 'ค่าเริ่มต้น');
   lines.push(

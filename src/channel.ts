@@ -1,10 +1,12 @@
 import { BudgetExceeded, type Agent, type IncomingImage } from './agent';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Briefings } from './briefings';
 import { runCommand, SLOW_COMMANDS, type Button, type CommandReply } from './commands';
 import type { Config } from './config';
 import type { GenerateContent } from './llm/gemini';
 import type { Store } from './store';
-import { voiceName, modelUnavailable, speakable, synthesize, toGeminiAudio, TTS_MODELS, type Speech } from './audio';
+import { wav, voiceName, modelUnavailable, speakable, synthesize, toGeminiAudio, TTS_MODELS, type Speech } from './audio';
 import { fileToInput, UserFacingError } from './documents';
 import type { JapaneseDaily } from './japanese';
 import type { Reviews } from './review';
@@ -240,6 +242,16 @@ export class Secretary {
       try {
         const speech = await synthesize(this.gemini, model, voice, prompt, (u) => this.agent.recordUsage(u, 'speech'));
         this.ttsModel = model;
+        if (speech?.raw && this.cfg.dataDir) {
+          // The last clip as Gemini sent it (before cleaning), to check audio problems: data/debug/last-speech.wav
+          try {
+            mkdirSync(join(this.cfg.dataDir, 'debug'), { recursive: true });
+            writeFileSync(join(this.cfg.dataDir, 'debug', 'last-speech.wav'), wav({ ...speech, pcm: speech.raw }));
+            writeFileSync(join(this.cfg.dataDir, 'debug', 'last-speech.txt'), `${model} ${voice} ${speech.mimeType} ${speech.raw.length} bytes, kept ${speech.pcm.length}\n`);
+          } catch {
+            // Diagnosis only.
+          }
+        }
         return speech;
       } catch (e) {
         if (!modelUnavailable(e)) throw e;
