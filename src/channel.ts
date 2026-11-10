@@ -88,6 +88,18 @@ function thaiPassthrough(msg: string): string {
   return msg;
 }
 
+/**
+ * What a Gemini "resource exhausted" (429) error is about. Google's message for every quota error says "check your
+ * plan and billing details", so "billing" alone means nothing: only an explicit prepaid-credit message is "credit".
+ * A per-day quota is "daily"; any other 429 is a per-minute "rate" limit (worth waiting out and retrying).
+ */
+export function quotaKind(message: string): 'credit' | 'daily' | 'rate' | null {
+  if (/prepay|credits? (are |is )?(depleted|exhausted)|insufficient (funds|balance|credit)|out of credit/i.test(message)) return 'credit';
+  if (!/\b429\b|RESOURCE_EXHAUSTED|too many requests|quota/i.test(message)) return null;
+  if (/PerDay|per.?day|daily/i.test(message)) return 'daily';
+  return 'rate';
+}
+
 /** One line telling the user why a voice reply couldn't be made. */
 export function speechFailed(e: unknown): string {
   const raw = e instanceof BudgetExceeded ? e.message : String((e as Error)?.message ?? e);
@@ -97,11 +109,11 @@ export function speechFailed(e: unknown): string {
       ? t('Gemini returned no audio.', 'Gemini ไม่ได้ส่งเสียงกลับมา')
       : /No Gemini speech model/i.test(raw)
         ? t('no Gemini speech model is available on your API key.', 'API key นี้ใช้โมเดลเสียงของ Gemini ไม่ได้เลย')
-        : /prepay|credits? (are )?depleted|billing/i.test(raw)
+        : quotaKind(raw) === 'credit'
           ? t('the Gemini credit ran out (top up in Google AI Studio → Billing).', 'เครดิต Gemini หมด (เติมได้ที่ Google AI Studio → Billing)')
-          : /per.?day|PerDay|daily/i.test(raw)
+          : quotaKind(raw) === 'daily'
             ? t("today's Gemini speech quota is used up; it resets tomorrow.", 'โควตาเสียงของ Gemini วันนี้หมดแล้ว จะรีเซ็ตพรุ่งนี้')
-            : /\b429\b|quota|RESOURCE_EXHAUSTED|too many requests/i.test(raw)
+            : quotaKind(raw) === 'rate'
               ? t('too many voice requests in a minute (a Gemini rate limit). Try again in a minute.', 'ขอเสียงถี่เกินไปในหนึ่งนาที (Gemini จำกัดอัตรา) ลองใหม่อีกครั้งในอีกสักครู่')
               : raw.slice(0, 200);
   return `🔇 ${t("I couldn't make the voice reply", 'สร้างเสียงตอบกลับไม่ได้')}: ${reason}`;
@@ -341,7 +353,7 @@ export class Secretary {
           return await request();
         } catch (e) {
           const msg = String((e as Error)?.message ?? e);
-          const rateLimited = /\b429\b|RESOURCE_EXHAUSTED|too many requests/i.test(msg) && !/per.?day|PerDay|daily|prepay|depleted|billing/i.test(msg);
+          const rateLimited = quotaKind(msg) === 'rate';
           if (!rateLimited || attempt >= 3) throw e;
           const suggested = /retry(?:Delay)?["\s:=]+"?(\d+(?:\.\d+)?)s/i.exec(msg)?.[1];
           const delay = Math.min(60_000, suggested ? Number(suggested) * 1000 + 500 : 5000 * 2 ** attempt);

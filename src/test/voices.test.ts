@@ -305,3 +305,39 @@ describe('voice sample buttons', () => {
     if (hasFfmpeg()) expect(sent.filter((s) => s.method === 'sendVoice').map((s) => s.caption)).toEqual(['1. Kore · firm', '2. Callirrhoe · easy-going', '3. Erinome · clear', '4. Sulafat · warm', '5. Pulcherrima · forward', '6. Gacrux · mature']);
   });
 });
+
+describe('reading Gemini quota errors', () => {
+  // Google's wording: every quota error says "check your plan and billing details".
+  const perMinute =
+    '[429 Too Many Requests] You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. ' +
+    '[{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_requests_per_model","quotaId":"GenerateRequestsPerMinutePerProjectPerModel","quotaValue":"10"}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"23s"}]';
+  const perDay = perMinute.replace('GenerateRequestsPerMinutePerProjectPerModel', 'GenerateRequestsPerDayPerProjectPerModel');
+  const credit = '[429 Too Many Requests] Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing.';
+
+  it('tells a per-minute limit, a daily quota and empty credit apart ("billing" alone means nothing)', async () => {
+    const { quotaKind, speechFailed } = await import('../channel');
+    expect(quotaKind(perMinute)).toBe('rate');
+    expect(quotaKind(perDay)).toBe('daily');
+    expect(quotaKind(credit)).toBe('credit');
+    expect(quotaKind('400 INVALID_ARGUMENT')).toBeNull();
+    expect(speechFailed(new Error(perMinute))).toMatch(/too many voice requests in a minute/);
+    expect(speechFailed(new Error(credit))).toMatch(/credit ran out/);
+  });
+
+  it('waits out a per-minute limit that mentions "billing details" and retries', async () => {
+    const { store, cfg, agent, briefings } = setup();
+    const clip = () => geminiRes([{ inlineData: { mimeType: 'audio/L16;rate=24000', data: Buffer.alloc(9600, 1).toString('base64') } }]);
+    const { generate, calls } = fakeGemini([new Error(perMinute), clip()]);
+    const s = new Secretary(cfg, store, agent, briefings, generate, async () => '');
+    let clock = 0;
+    const waits: number[] = [];
+    s.now = () => clock;
+    s.wait = async (ms) => {
+      waits.push(ms);
+      clock += ms;
+    };
+    expect(await s.speech('Hello')).toBeTruthy();
+    expect(calls).toHaveLength(2);
+    expect(waits).toEqual([23_500]);
+  });
+});
