@@ -5,3 +5,5 @@ data
 credentials.json
 token.json
 client_secret*.json
+vertex-key.json
+*service-account*.json

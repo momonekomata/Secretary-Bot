@@ -149,6 +149,7 @@ It remembers the recent conversation. `/reset` forgets the conversation but keep
 | `/say <text>` | Speak any text, e.g. `/say おはようございます` |
 | `/voicestyle` | How the voice speaks: ready-made styles (cute, anime heroine, gentle, energetic, calm) or your own words, e.g. `/voicestyle shy and sweet, high-pitched`; `/voicestyle off` |
 | `/voices` | Hear 8 cute female voice samples (Japanese + Thai) in one go, then tap one to use it; `/voices more` for 6 more |
+| `/ttsvoice th Leda` / `/ttsvoice ja Autonoe` | A different voice for Thai and for Japanese (`/ttsvoice ja off` to undo); `/ttsvoice Leda` sets one voice for all |
 | `/ttsvoice` | Pick the speaking voice with buttons (plays a sample); or `/ttsvoice Sulafat` for any of Gemini's 30 voices |
 | `/translate <language>` | Which language voice notes are translated into |
 
@@ -398,6 +399,7 @@ In Japanese practice scenes it plays a character and gently corrects your mistak
   - `/voice always`: speaks every reply
   - `/voice off`: never speaks
 - `/say <text>` speaks anything, which is handy for Japanese pronunciation. To hear a message that is already in the chat, reply to it with `/say` (or just 🔊); `/say` on its own reads my last reply. `/ttsvoice` shows voice buttons; tap one to hear it.
+- **A voice per language:** Thai and Japanese can each have their own voice, e.g. Leda for Thai and Autonoe for Japanese, both in your speaking style. Mixed replies switch voice with the language. Set it with `/ttsvoice th …` / `/ttsvoice ja …` or the 🇹🇭 / 🇯🇵 buttons under each `/voices` sample.
 - `/voicestyle` sets *how* the voice speaks (mood, pitch, pace), separately from *which* voice. Tap a ready-made style or describe your own in plain words (English works best); it plays a sample right away. You can also just ask, e.g. "make your voice softer and shyer".
 - `/voices` plays samples of several female voices one after another (each says a Japanese and a Thai line in a cute style), so you can compare them without testing one by one. Tap your favourite under the samples: it sets the voice and the cute speaking style. About $0.01 of Gemini per round.
 - If a voice reply can't be made, the bot says why (e.g. no Gemini speech model on the key, quota used up) instead of staying silent.
@@ -482,6 +484,7 @@ Edit `data/.env` on the NAS, then restart the container. Only the first group is
 | `BOT_DAILY_NUDGE_HOUR` | off | Hour for a WaniKani "reviews waiting" nudge |
 | `WANIKANI_TOKEN` | — | WaniKani (needs the `reviews:create` permission for `/review`) |
 | `GOOGLE_MAPS_API_KEY` | — | Places and travel times |
+| `data/vertex-key.json` + `VERTEX_LOCATION`, `VERTEX_PROJECT`, `GEMINI_VIA_VERTEX` | off until the key file is there | Run Gemini through Vertex AI so Google Cloud credit pays for it (SETUP-GUIDE Part 6); the Gemini API key stays as backup |
 | `VOICE_TRANSLATE_TO` | `English` | Voice note translation language |
 | `VOICE_REPLIES` | `voice-notes` | `off`, `voice-notes` or `always` |
 | `TTS_VOICE` | `Kore` | Speaking voice |

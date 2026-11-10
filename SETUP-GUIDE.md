@@ -356,6 +356,43 @@ backup file in LINE (as links). Pick one option:
 
 ---
 
+## Part 6 — Pay for Gemini with Google Cloud credit (Vertex AI, optional)
+
+Google Cloud's free-trial credit ($300) and other Cloud credits can't pay for the Gemini API key from AI Studio, but
+they can pay for the same Gemini models through **Vertex AI**. With this part, the bot's chat, voice notes and spoken
+replies run through Vertex AI and go on your Google Cloud bill. Your Gemini API key stays as a backup: if a call fails
+on Vertex AI, the bot uses the key for that call.
+
+### Step 1. Turn on Vertex AI
+
+1. Open **https://console.cloud.google.com** and pick the project that has the credit (top bar).
+2. Search for **"Vertex AI API"** (it may be called **Agent Platform API**) and click **Enable**.
+
+### Step 2. Make a key for the bot (a "service account")
+
+1. In the search bar type **Service accounts** → **+ Create service account**.
+2. Name: `secretary-bot` → **Create and continue**.
+3. Role: **Vertex AI User** → **Continue** → **Done**.
+4. Click the new service account → **Keys** tab → **Add key** → **Create new key** → **JSON** → **Create**.
+   A `.json` file downloads. **It is a password: don't share it or upload it anywhere else.**
+5. Rename it to **`vertex-key.json`**.
+
+### Step 3. Give it to the bot
+
+1. On the NAS, upload `vertex-key.json` into the **`data`** folder (next to `.env` and `token.json`).
+2. Restart the bot (Container Manager → Project → **secretary-bot** → **Action** → **Restart**).
+3. Send **`/status`**. You should see **"Gemini via Vertex AI (Google Cloud billing): ✅"**.
+
+If it shows ❌, the message says why (usually the API isn't enabled yet, or the role is missing; changes can take a
+few minutes). Until it works, the bot keeps using your Gemini API key, so nothing stops working.
+
+Optional settings in `data/.env`: `VERTEX_LOCATION` (default `global`, where the newest models are), `VERTEX_PROJECT`
+(read from the key file when empty), and `GEMINI_VIA_VERTEX=off` to stop using Vertex AI without deleting the key.
+
+**Good to know:** the free-trial credit lasts 90 days or until it's used up. After that Vertex AI is billed to your
+card like any Google Cloud service (your `/limit` caps still apply). To go back to the Gemini API key, remove
+`vertex-key.json` or set `GEMINI_VIA_VERTEX=off`.
+
 ## If something goes wrong
 
 | What you see | What to do |

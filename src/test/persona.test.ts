@@ -104,7 +104,7 @@ describe('spoken replies: model fallback and voice choice', () => {
   it('/ttsvoice offers voices as buttons and plays a sample', async () => {
     const { ctx, store } = setup();
     const menu = (await runCommand('/ttsvoice', ctx))!;
-    expect(menu.text).toMatch(/^🔊 Voice for spoken replies: Kore/);
+    expect(menu.text).toMatch(/^🔊 Voice: Kore for all languages\./);
     expect(menu.buttons!.flat().map((b) => b.command)).toContain('/ttsvoice Puck');
     expect(menu.buttons!.flat()[0].label).toBe('✅ Kore · firm');
     const r = (await runCommand('/ttsvoice puck', ctx))!;

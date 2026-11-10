@@ -114,6 +114,8 @@ export interface Settings {
   preferences?: string[];
   /** Gemini prebuilt voice for spoken replies, and how to speak. */
   ttsVoice?: string;
+  /** A different voice per language (overrides ttsVoice for that language), e.g. { th: 'Leda', ja: 'Autonoe' }. */
+  ttsVoiceByLang?: { th?: string; ja?: string };
   speakingStyle?: string;
   /** JLPT level for kanji/word of the day when WaniKani isn't connected. */
   jlptLevel?: 'N5' | 'N4' | 'N3' | 'N2' | 'N1';
