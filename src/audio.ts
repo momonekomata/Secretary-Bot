@@ -118,9 +118,13 @@ export async function synthesize(generate: GenerateContent, model: string, voice
   onUsage(geminiUsage(model, res));
   const part = res.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
   if (!part?.inlineData?.data) return null;
-  const rate = Number(/rate=(\d+)/.exec(part.inlineData.mimeType ?? '')?.[1] ?? 24000);
   const raw = Buffer.from(part.inlineData.data, 'base64');
-  const pcm = cleanTail(raw, rate);
+  // Older models send raw 16-bit PCM ("audio/L16;rate=24000"); Gemini 3.8 sends a WAV file ("audio/wav") whose
+  // sound is followed by a C2PA content-credentials section: play only the WAV's sound, or that section is static.
+  const fromWav = readWav(raw);
+  if (raw.subarray(0, 4).toString('latin1') === 'RIFF' && !fromWav) throw new Error('Gemini sent a WAV file I could not read.');
+  const rate = fromWav?.rate ?? Number(/rate=(\d+)/.exec(part.inlineData.mimeType ?? '')?.[1] ?? 24000);
+  const pcm = cleanTail(fromWav?.pcm ?? raw, rate);
   return { pcm, rate, durationMs: Math.round((pcm.length / 2 / rate) * 1000), raw, mimeType: part.inlineData.mimeType ?? '' };
 }
 
@@ -190,6 +194,41 @@ function fadeOut(pcm: Buffer, rate: number): Buffer {
 export const toOggOpus = (s: Speech) => ffmpeg(wav(s), 'wav', 'ogg', ['-c:a', 'libopus', '-b:a', '32k']);
 /** LINE audio message: M4A (AAC). */
 export const toM4a = (s: Speech) => ffmpeg(wav(s), 'wav', 'm4a', ['-c:a', 'aac', '-b:a', '64k']);
+
+/**
+ * The sound of a WAV file as 16-bit mono PCM, or null if `buf` isn't a WAV file this can read.
+ * Only the "data" section is sound; other sections (fmt, LIST, C2PA, ...) are skipped. Stereo is mixed to mono.
+ */
+export function readWav(buf: Buffer): { pcm: Buffer; rate: number } | null {
+  if (buf.length < 12 || buf.subarray(0, 4).toString('latin1') !== 'RIFF' || buf.subarray(8, 12).toString('latin1') !== 'WAVE') return null;
+  let format: { channels: number; rate: number; bits: number; code: number } | null = null;
+  let i = 12;
+  while (i + 8 <= buf.length) {
+    const id = buf.subarray(i, i + 4).toString('latin1');
+    let size = buf.readUInt32LE(i + 4);
+    const body = i + 8;
+    if (id === 'fmt ' && size >= 16) {
+      format = { code: buf.readUInt16LE(body), channels: buf.readUInt16LE(body + 2), rate: buf.readUInt32LE(body + 4), bits: buf.readUInt16LE(body + 14) };
+    }
+    if (id === 'data') {
+      if (!format || format.bits !== 16 || (format.code !== 1 && format.code !== 0xfffe) || format.channels < 1) return null;
+      // A streamed WAV may give a placeholder size: then the sound runs to the end of the file.
+      if (size === 0 || size === 0xffffffff || body + size > buf.length) size = buf.length - body;
+      const data = buf.subarray(body, body + size - (size % (2 * format.channels)));
+      if (format.channels === 1) return { pcm: Buffer.from(data), rate: format.rate };
+      const frames = data.length / 2 / format.channels;
+      const mono = Buffer.alloc(frames * 2);
+      for (let f = 0; f < frames; f++) {
+        let sum = 0;
+        for (let c = 0; c < format.channels; c++) sum += data.readInt16LE((f * format.channels + c) * 2);
+        mono.writeInt16LE(Math.round(sum / format.channels), f * 2);
+      }
+      return { pcm: mono, rate: format.rate };
+    }
+    i = body + size + (size & 1);
+  }
+  return null;
+}
 
 /** WAV container for raw PCM (no ffmpeg needed). */
 export function wav(s: Speech): Buffer {
