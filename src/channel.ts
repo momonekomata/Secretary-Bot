@@ -7,7 +7,7 @@ import { runCommand, SLOW_COMMANDS, type Button, type CommandReply } from './com
 import type { Config } from './config';
 import type { GenerateContent } from './llm/gemini';
 import type { Store } from './store';
-import { styleRejected, wav, voiceName, modelUnavailable, speakable, synthesize, toGeminiAudio, TTS_MODELS, type Speech } from './audio';
+import { joinSpeech, splitLanguages, styleRejected, trimSilence, wav, voiceName, modelUnavailable, type SpeechLang, speakable, synthesize, toGeminiAudio, TTS_MODELS, type Speech } from './audio';
 import { fileToInput, UserFacingError } from './documents';
 import type { JapaneseDaily } from './japanese';
 import type { Reviews } from './review';
@@ -235,8 +235,39 @@ export class Secretary {
     if (!spoken) return null;
     this.agent.checkBudget('gemini');
     const s = this.store.settings();
-    const style = this.styleOff ? '' : (opts.style ?? s.speakingStyle ?? '');
+    const style = opts.style ?? s.speakingStyle ?? '';
     const voice = voiceName(opts.voice ?? '') ?? voiceName(s.ttsVoice ?? '') ?? voiceName(this.cfg.ttsVoice) ?? 'Kore';
+    const runs = splitLanguages(spoken);
+    const langs = new Set(runs.map((r) => r.lang).filter(Boolean));
+    // One language (or too many switches to be worth it): one clip, as before.
+    if (langs.size < 2 || runs.length > 24) {
+      const speech = await this.speakOne(spoken, voice, style);
+      this.saveDebug(speech, voice, [spoken]);
+      return speech;
+    }
+    // Thai with Japanese words: each run gets its own clip, so Japanese is pronounced as Japanese, then they're joined.
+    const styleFor = (lang: SpeechLang | null) =>
+      lang === 'ja' ? [style, 'natural native Japanese pronunciation'].filter(Boolean).join('; ') : lang === 'th' ? [style, 'natural Thai pronunciation'].filter(Boolean).join('; ') : style;
+    const clips: (Speech | null)[] = [];
+    for (let i = 0; i < runs.length; i += 3) {
+      clips.push(...(await Promise.all(runs.slice(i, i + 3).map((r) => this.speakOne(r.text, voice, styleFor(r.lang))))));
+    }
+    const ok = clips.filter((c): c is Speech => !!c && c.pcm.length > 0);
+    if (!ok.length) return null;
+    if (ok.some((c) => c.rate !== ok[0].rate)) {
+      const speech = await this.speakOne(spoken, voice, style); // can't join different formats: one clip instead
+      this.saveDebug(speech, voice, [spoken]);
+      return speech;
+    }
+    const joined = joinSpeech(ok.map((c) => ({ ...c, pcm: trimSilence(c.pcm, c.rate) })));
+    this.saveDebug(joined, voice, runs.map((r) => `[${r.lang ?? '-'}] ${r.text}`));
+    return joined;
+  }
+
+  /** One clip: tries the speech models in turn, and leaves the style out if the API rejects it. */
+  private async speakOne(text: string, voice: string, style: string): Promise<Speech | null> {
+    const gemini = this.gemini!;
+    const styleNow = this.styleOff ? '' : style;
     const models = [...new Set([this.ttsModel, this.cfg.ttsModel, ...TTS_MODELS].filter((m): m is string => !!m))];
     let last: unknown = null;
     for (const model of models) {
@@ -244,24 +275,14 @@ export class Secretary {
         const record = (u: Usage) => this.agent.recordUsage(u, 'speech');
         let speech: Speech | null;
         try {
-          speech = await synthesize(this.gemini, model, voice, spoken, record, style);
+          speech = await synthesize(gemini, model, voice, text, record, styleNow);
         } catch (e) {
           // If the API doesn't take the separate style field, speak without a style rather than reading it aloud.
-          if (!style || !styleRejected(e)) throw e;
+          if (!styleNow || !styleRejected(e)) throw e;
           this.styleOff = true;
-          speech = await synthesize(this.gemini, model, voice, spoken, record);
+          speech = await synthesize(gemini, model, voice, text, record);
         }
         this.ttsModel = model;
-        if (speech?.raw && this.cfg.dataDir) {
-          // The last clip as Gemini sent it (before cleaning), to check audio problems: data/debug/last-speech.wav
-          try {
-            mkdirSync(join(this.cfg.dataDir, 'debug'), { recursive: true });
-            writeFileSync(join(this.cfg.dataDir, 'debug', 'last-speech.wav'), speech.raw.subarray(0, 4).toString('latin1') === 'RIFF' ? speech.raw : wav({ ...speech, pcm: speech.raw }));
-            writeFileSync(join(this.cfg.dataDir, 'debug', 'last-speech.txt'), `${model} ${voice} ${speech.mimeType} ${speech.raw.length} bytes, kept ${speech.pcm.length}\n`);
-          } catch {
-            // Diagnosis only.
-          }
-        }
         return speech;
       } catch (e) {
         if (!modelUnavailable(e)) throw e;
@@ -269,6 +290,22 @@ export class Secretary {
       }
     }
     throw new Error(`No Gemini speech model is available on this API key (tried ${models.join(', ')}): ${(last as Error)?.message ?? ''}`);
+  }
+
+  /** The last clip, to check audio problems: data/debug/last-speech.wav (as Gemini sent it when it is one clip). */
+  private saveDebug(speech: Speech | null, voice: string, parts: string[]) {
+    if (!speech || !this.cfg.dataDir) return;
+    try {
+      mkdirSync(join(this.cfg.dataDir, 'debug'), { recursive: true });
+      const raw = speech.raw;
+      writeFileSync(join(this.cfg.dataDir, 'debug', 'last-speech.wav'), raw ? (raw.subarray(0, 4).toString('latin1') === 'RIFF' ? raw : wav({ ...speech, pcm: raw })) : wav(speech));
+      writeFileSync(
+        join(this.cfg.dataDir, 'debug', 'last-speech.txt'),
+        `${this.ttsModel} ${voice} ${speech.mimeType ?? 'joined'} ${raw?.length ?? speech.pcm.length} bytes, kept ${speech.pcm.length}\n${parts.length > 1 ? `${parts.join('\n')}\n` : ''}`,
+      );
+    } catch {
+      // Diagnosis only.
+    }
   }
 
   /** Set when the API rejected the speaking-style field: styles are then left out. */

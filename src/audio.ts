@@ -109,6 +109,61 @@ export function modelUnavailable(e: unknown): boolean {
   return /\b404\b|NOT_FOUND|not found|is not supported|not supported for|does not support|response modalit|AUDIO.*not/i.test(m);
 }
 
+export type SpeechLang = 'th' | 'ja';
+
+const THAI = /[\u0E00-\u0E7F]/;
+// Hiragana, katakana (incl. ー and half-width), kanji, and Japanese punctuation/brackets (、。「」 and full-width signs).
+const JAPANESE = /[\u3000-\u303F\u3040-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uFF01-\uFF0F\uFF1A-\uFF20\uFF66-\uFF9F]/;
+
+/**
+ * Splits text that mixes Thai and Japanese into runs of one language each, so each run can be spoken with its own
+ * pronunciation (one clip reads everything with one accent). Spaces, digits, Latin letters and punctuation stay
+ * with the run they are in (or the next one, at the start). Text in one language comes back as a single run.
+ */
+export function splitLanguages(text: string): { lang: SpeechLang | null; text: string }[] {
+  const runs: { lang: SpeechLang | null; text: string }[] = [];
+  let pending = '';
+  for (const ch of text) {
+    const lang: SpeechLang | null = THAI.test(ch) ? 'th' : JAPANESE.test(ch) ? 'ja' : null;
+    const cur = runs[runs.length - 1];
+    if (!lang) {
+      if (cur) cur.text += ch;
+      else pending += ch;
+    } else if (cur && cur.lang === lang) cur.text += ch;
+    else {
+      runs.push({ lang, text: pending + ch });
+      pending = '';
+    }
+  }
+  if (!runs.length) return [{ lang: null, text: text.trim() }].filter((r) => r.text);
+  // A space or punctuation right before the switch belongs to the next run's start, not the previous run's end.
+  return runs.map((r) => ({ ...r, text: r.text.trim() })).filter((r) => /[\p{L}\p{N}]/u.test(r.text));
+}
+
+/** Cuts the silence Gemini leaves before and after a clip, keeping `keepMs` so words aren't clipped. */
+export function trimSilence(pcm: Buffer, rate: number, keepMs = 30): Buffer {
+  const n = Math.floor(pcm.length / 2);
+  let peak = 0;
+  for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(pcm.readInt16LE(i * 2)));
+  const floor = Math.max(200, peak * 0.03);
+  let start = 0;
+  while (start < n && Math.abs(pcm.readInt16LE(start * 2)) < floor) start++;
+  let end = n;
+  while (end > start && Math.abs(pcm.readInt16LE((end - 1) * 2)) < floor) end--;
+  if (start >= end) return pcm.subarray(0, 0);
+  const keep = Math.round((rate * keepMs) / 1000);
+  return pcm.subarray(Math.max(0, start - keep) * 2, Math.min(n, end + keep) * 2);
+}
+
+/** Joins clips of the same voice into one, with a short natural gap between them. */
+export function joinSpeech(parts: Speech[], gapMs = 70): Speech {
+  const rate = parts[0].rate;
+  const gap = Buffer.alloc(Math.round((rate * gapMs) / 1000) * 2);
+  const pieces = parts.map((p, i) => (i === 0 ? p.pcm : Buffer.concat([gap, p.pcm])));
+  const pcm = Buffer.concat(pieces);
+  return { pcm, rate, durationMs: Math.round((pcm.length / 2 / rate) * 1000) };
+}
+
 /** Older speech models (before 3.8) take delivery direction inside the text ("Say cheerfully: …"). */
 export function styleInText(model: string): boolean {
   return /^gemini-(2\.|3\.[0-7]\b)/.test(model);
