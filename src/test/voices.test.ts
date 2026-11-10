@@ -42,12 +42,17 @@ describe('/voices', () => {
 
   it('speaks a sample with the given voice and style', async () => {
     const { store, cfg, agent, briefings } = setup();
-    const { generate, calls } = fakeGemini([geminiRes([{ inlineData: { mimeType: 'audio/L16;rate=24000', data: Buffer.alloc(9600).toString('base64') } }])]);
+    const clip = () => geminiRes([{ inlineData: { mimeType: 'audio/L16;rate=24000', data: Buffer.alloc(9600, 1).toString('base64') } }]);
+    const { generate, calls } = fakeGemini([clip(), clip()]);
     store.updateSettings({ ttsVoice: 'Kore', speakingStyle: 'calmly' });
     await new Secretary(cfg, store, agent, briefings, generate, async () => '').speech(SAMPLE_LINE, { voice: 'Leda', style: CUTE_STYLE });
     expect(JSON.stringify(calls[0].config)).toContain('"voiceName":"Leda"');
-    expect(calls[0].contents).toEqual([{ role: 'user', parts: [{ text: SAMPLE_LINE, speechMetadata: { style: CUTE_STYLE } }] }]);
-    expect(JSON.stringify(calls[0].contents)).not.toContain('Say ');
+    // The sample line is Japanese then Thai: each part is spoken with its own pronunciation.
+    expect(calls.map((c) => c.contents)).toEqual([
+      [{ role: 'user', parts: [{ text: 'こんにちは！今日も一緒にがんばろうね。', speechMetadata: { style: `${CUTE_STYLE}; natural native Japanese pronunciation` } }] }],
+      [{ role: 'user', parts: [{ text: 'สวัสดีค่ะ วันนี้ก็สู้ๆ ไปด้วยกันนะคะ', speechMetadata: { style: `${CUTE_STYLE}; natural Thai pronunciation` } }] }],
+    ]);
+    expect(JSON.stringify(calls)).not.toContain('Say ');
   });
 });
 
