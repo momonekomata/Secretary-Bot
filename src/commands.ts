@@ -33,7 +33,33 @@ export interface CommandReply {
   file?: { name: string; data: Buffer };
   /** Text to also send as a spoken voice message. */
   speak?: string;
+  /** Voice samples to send one after another (one voice message each), then `footer` with its buttons. */
+  samples?: { line: string; style: string; items: { voice: string; caption: string }[]; footer: { text: string; buttons: Button[][] } };
 }
+
+/** How the bot speaks after picking a voice in /voices. */
+export const CUTE_STYLE = "in a cute, bright and cheerful young woman's voice, sweet and playful";
+/** The sample line: Japanese and Thai, the user's main languages. */
+export const SAMPLE_LINE = 'こんにちは！今日も一緒にがんばろうね。 สวัสดีค่ะ วันนี้ก็สู้ๆ ไปด้วยกันนะคะ';
+/** Female-sounding Gemini voices: the cute-leaning ones first, more with /voices more. [voice, English, Thai] */
+const CUTE_VOICES: [string, string, string][] = [
+  ['Leda', 'youthful', 'อ่อนวัย'],
+  ['Laomedeia', 'upbeat', 'ร่าเริง'],
+  ['Autonoe', 'bright', 'สดใส'],
+  ['Zephyr', 'bright', 'สว่างใส'],
+  ['Achernar', 'soft', 'นุ่มนวล'],
+  ['Aoede', 'breezy', 'สบายๆ'],
+  ['Despina', 'smooth', 'ลื่นไหล'],
+  ['Vindemiatrix', 'gentle', 'อ่อนโยน'],
+];
+const MORE_VOICES: [string, string, string][] = [
+  ['Kore', 'firm', 'หนักแน่น'],
+  ['Callirrhoe', 'easy-going', 'เป็นกันเอง'],
+  ['Erinome', 'clear', 'ชัดเจน'],
+  ['Sulafat', 'warm', 'อบอุ่น'],
+  ['Pulcherrima', 'forward', 'มั่นใจ'],
+  ['Gacrux', 'mature', 'เป็นผู้ใหญ่'],
+];
 
 export interface CommandContext {
   chatKey: string;
@@ -52,7 +78,7 @@ export interface CommandContext {
 }
 
 /** Commands that call an AI or an outside API: channels show "typing…" while they run. */
-export const SLOW_COMMANDS = new Set(['/review', '/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say', '/budget', '/money']);
+export const SLOW_COMMANDS = new Set(['/review', '/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say', '/budget', '/money', '/voices']);
 
 /** The /help text, in the current language. */
 export function helpText(): string {
@@ -541,6 +567,40 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
           ),
         };
       }
+      case '/voices': {
+        const [sub = '', name = ''] = arg.split(/\s+/);
+        if (sub.toLowerCase() === 'pick') {
+          const voice = voiceName(name);
+          if (!voice) return { text: t('Which voice? Tap one under the samples, or send /voices to hear them.', 'เสียงไหนดี? แตะเลือกใต้ตัวอย่าง หรือส่ง /voices เพื่อฟังตัวอย่าง') };
+          store.updateSettings({ ttsVoice: voice, speakingStyle: CUTE_STYLE });
+          return {
+            text: t(
+              `✅ I'll speak with the ${voice} voice, in a cute, cheerful style. Change it any time with /voices.`,
+              `✅ จะพูดด้วยเสียง ${voice} แบบน่ารักสดใส เปลี่ยนได้ทุกเมื่อด้วย /voices`,
+            ),
+            speak: SAMPLE_LINE,
+          };
+        }
+        const more = sub.toLowerCase() === 'more';
+        const list = more ? MORE_VOICES : CUTE_VOICES;
+        const current = store.settings().ttsVoice;
+        const pick = list.map(([v, en, th]) => ({ label: `${v === current ? '✅ ' : ''}${v} · ${t(en, th)}`, command: `/voices pick ${v}` }));
+        const rows: Button[][] = [];
+        for (let i = 0; i < pick.length; i += 2) rows.push(pick.slice(i, i + 2));
+        rows.push([more ? { label: t('⬅️ The first 8', '⬅️ 8 เสียงแรก'), command: '/voices' } : { label: t('🎧 6 more voices', '🎧 ฟังอีก 6 เสียง'), command: '/voices more' }]);
+        return {
+          text: t(
+            `🎧 ${list.length} voice samples are on the way (about half a minute), each saying a Japanese and a Thai line in a cute style. Tap your favourite at the end. (About $0.01 of Gemini.)`,
+            `🎧 กำลังส่งตัวอย่าง ${list.length} เสียง (ประมาณครึ่งนาที) แต่ละเสียงพูดประโยคภาษาญี่ปุ่นและภาษาไทยแบบน่ารัก ฟังแล้วแตะเลือกเสียงที่ชอบท้ายสุดได้เลย (ค่า Gemini ประมาณ $0.01)`,
+          ),
+          samples: {
+            line: SAMPLE_LINE,
+            style: CUTE_STYLE,
+            items: list.map(([v, en, th], i) => ({ voice: v, caption: `${i + 1}. ${v} · ${t(en, th)}` })),
+            footer: { text: t('Which one do you like? Tap to use it:', 'ชอบเสียงไหน? แตะเพื่อใช้เสียงนั้น:'), buttons: rows },
+          },
+        };
+      }
       case '/ttsvoice': {
         // Popular voices with their style (from Gemini's voice list); any of the 30 can be typed.
         const styles: [string, string, string][] = [
@@ -556,7 +616,7 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         const current = voiceName(store.settings().ttsVoice ?? '') ?? voiceName(cfg.ttsVoice) ?? 'Kore';
         const buttons = (chosen: string): Button[][] => {
           const all = styles.map(([v, en, th]) => ({ label: `${v === chosen ? '✅ ' : ''}${v} · ${t(en, th)}`, command: `/ttsvoice ${v}` }));
-          return [all.slice(0, 2), all.slice(2, 4), all.slice(4, 6), all.slice(6, 8)];
+          return [all.slice(0, 2), all.slice(2, 4), all.slice(4, 6), all.slice(6, 8), [{ label: t('🎧 Hear female voice samples', '🎧 ฟังตัวอย่างเสียงผู้หญิง'), command: '/voices' }]];
         };
         const others = TTS_VOICES.filter((v) => !styles.some(([s]) => s === v)).join(', ');
         if (!arg) {

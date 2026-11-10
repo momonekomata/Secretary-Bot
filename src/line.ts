@@ -177,12 +177,16 @@ export class Line implements Channel {
         const { type, buf } = await this.content(ev.message.id);
         incoming.file = { name, mime: type || 'application/octet-stream', data: buf };
       }
-      const reply = await this.secretary.handle(incoming);
+      let reply = await this.secretary.handle(incoming);
       if (reply) {
         let text = reply.text;
         if (reply.file) {
           const link = this.files?.enabled ? this.files.add(reply.file.name, 'application/octet-stream', reply.file.data, 7 * 24 * 3600_000) : null;
           text += `\n${fileNote(reply.file.name, link)}`;
+        }
+        if (reply.samples) {
+          text = `${t('🎧 Voice samples play on Telegram. You can still pick a voice here:', '🎧 ตัวอย่างเสียงเล่นได้ใน Telegram แต่เลือกเสียงที่นี่ได้:')}`;
+          reply = { ...reply, buttons: reply.samples.footer.buttons };
         }
         const spoken = reply.speak ? await this.audioMessage(reply.speak) : null;
         if (spoken?.error) text = [text || reply.speak, spoken.error].filter(Boolean).join('\n\n');
