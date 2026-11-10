@@ -246,7 +246,7 @@ export class Secretary {
           // The last clip as Gemini sent it (before cleaning), to check audio problems: data/debug/last-speech.wav
           try {
             mkdirSync(join(this.cfg.dataDir, 'debug'), { recursive: true });
-            writeFileSync(join(this.cfg.dataDir, 'debug', 'last-speech.wav'), wav({ ...speech, pcm: speech.raw }));
+            writeFileSync(join(this.cfg.dataDir, 'debug', 'last-speech.wav'), speech.raw.subarray(0, 4).toString('latin1') === 'RIFF' ? speech.raw : wav({ ...speech, pcm: speech.raw }));
             writeFileSync(join(this.cfg.dataDir, 'debug', 'last-speech.txt'), `${model} ${voice} ${speech.mimeType} ${speech.raw.length} bytes, kept ${speech.pcm.length}\n`);
           } catch {
             // Diagnosis only.
