@@ -234,3 +234,50 @@ describe('Gemini speech rate limit', () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+describe('a voice per language', () => {
+  const ANIME = 'affectionate, loving and cheerful, yet a little shy; a high-pitched, sweet and melodic voice like an anime heroine';
+  const clip = () => geminiRes([{ inlineData: { mimeType: 'audio/L16;rate=24000', data: Buffer.alloc(9600, 1).toString('base64') } }]);
+  const partOf = (c: { contents?: unknown; config?: unknown }) => ({
+    voice: /"voiceName":"(\w+)"/.exec(JSON.stringify(c.config))![1],
+    ...(c.contents as { parts: { text: string; speechMetadata?: { style: string } }[] }[])[0].parts[0],
+  });
+
+  it('speaks Thai with the Thai voice and Japanese with the Japanese voice, in the same style', async () => {
+    const { ctx, store, cfg, agent, briefings } = setup();
+    await runCommand('/voicestyle anime', ctx);
+    await runCommand('/ttsvoice th Leda', ctx);
+    const r = (await runCommand('/ttsvoice ja autonoe', ctx))!;
+    expect(store.settings().ttsVoiceByLang).toEqual({ th: 'Leda', ja: 'Autonoe' });
+    expect(r.text).toContain('Thai voice: Leda · Japanese voice: Autonoe');
+
+    const { generate, calls } = fakeGemini([clip(), clip(), clip(), clip()]);
+    const s = new Secretary(cfg, store, agent, briefings, generate, async () => '');
+    await s.speech('คำว่า ありがとう แปลว่าขอบคุณ');
+    expect(calls.map(partOf)).toEqual([
+      { voice: 'Leda', text: 'คำว่า', speechMetadata: { style: `${ANIME}; natural Thai pronunciation` } },
+      { voice: 'Autonoe', text: 'ありがとう', speechMetadata: { style: `${ANIME}; natural native Japanese pronunciation` } },
+      { voice: 'Leda', text: 'แปลว่าขอบคุณ', speechMetadata: { style: `${ANIME}; natural Thai pronunciation` } },
+    ]);
+    // A Japanese-only reply is one clip with the Japanese voice.
+    await s.speech('おはようございます');
+    expect(partOf(calls[3]).voice).toBe('Autonoe');
+  });
+
+  it('/voices keeps your style, plays samples in it, and has 🇹🇭 / 🇯🇵 buttons', async () => {
+    const { ctx, store } = setup();
+    await runCommand('/voicestyle anime', ctx);
+    const r = (await runCommand('/voices', ctx))!;
+    expect(r.samples!.style).toBe(ANIME);
+    expect(r.samples!.footer.buttons[0].map((b) => b.command)).toEqual(['/voices pick Leda', '/voices pick Leda th', '/voices pick Leda ja']);
+    await runCommand('/voices pick Autonoe ja', ctx);
+    expect(store.settings()).toMatchObject({ speakingStyle: ANIME, ttsVoiceByLang: { ja: 'Autonoe' } });
+    // Picking one voice for everything clears the per-language ones.
+    await runCommand('/voices pick Leda', ctx);
+    expect(store.settings()).toMatchObject({ ttsVoice: 'Leda', speakingStyle: ANIME });
+    expect(store.settings().ttsVoiceByLang).toBeUndefined();
+    await runCommand('/ttsvoice ja Autonoe', ctx);
+    await runCommand('/ttsvoice ja off', ctx);
+    expect(store.settings().ttsVoiceByLang).toBeUndefined();
+  });
+});

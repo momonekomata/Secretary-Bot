@@ -39,6 +39,16 @@ export interface CommandReply {
 
 /** How the bot speaks after picking a voice in /voices. */
 export const CUTE_STYLE = "in a cute, bright and cheerful young woman's voice, sweet and playful";
+/** "Voice: Leda (Thai: Leda, Japanese: Autonoe)" for the voice menus. */
+export function voicesSummary(store: Store): string {
+  const s = store.settings();
+  const all = s.ttsVoice ?? 'Kore';
+  const th = s.ttsVoiceByLang?.th;
+  const ja = s.ttsVoiceByLang?.ja;
+  if (!th && !ja) return t(`Voice: ${all} for all languages.`, `เสียง: ${all} สำหรับทุกภาษา`);
+  return t(`Thai voice: ${th ?? all} · Japanese voice: ${ja ?? all} · other languages: ${all}.`, `เสียงภาษาไทย: ${th ?? all} · เสียงภาษาญี่ปุ่น: ${ja ?? all} · ภาษาอื่น: ${all}`);
+}
+
 /** Ready-made speaking styles for /voicestyle: [key, English label, Thai label, the style itself]. */
 export const VOICE_STYLES: [string, string, string, string][] = [
   ['cute', '🍬 Cute', '🍬 น่ารัก', CUTE_STYLE],
@@ -618,36 +628,48 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         };
       }
       case '/voices': {
-        const [sub = '', name = ''] = arg.split(/\s+/);
+        const [sub = '', name = '', which = ''] = arg.split(/\s+/);
+        // Samples play in the user's own style (or cute when none is set), so what you hear is what you get.
+        const sampleStyle = store.settings().speakingStyle ?? CUTE_STYLE;
         if (sub.toLowerCase() === 'pick') {
           const voice = voiceName(name);
           if (!voice) return { text: t('Which voice? Tap one under the samples, or send /voices to hear them.', 'เสียงไหนดี? แตะเลือกใต้ตัวอย่าง หรือส่ง /voices เพื่อฟังตัวอย่าง') };
-          store.updateSettings({ ttsVoice: voice, speakingStyle: CUTE_STYLE });
+          const lang = which === 'th' || which === 'ja' ? which : null;
+          const byLang = { ...(store.settings().ttsVoiceByLang ?? {}) };
+          if (lang) byLang[lang] = voice;
+          store.updateSettings({
+            ...(lang ? { ttsVoiceByLang: byLang } : { ttsVoice: voice, ttsVoiceByLang: undefined }),
+            ...(store.settings().speakingStyle ? {} : { speakingStyle: CUTE_STYLE }),
+          });
+          const forWhat = lang === 'th' ? t(' for Thai', 'สำหรับภาษาไทย') : lang === 'ja' ? t(' for Japanese', 'สำหรับภาษาญี่ปุ่น') : '';
           return {
-            text: t(
-              `✅ I'll speak with the ${voice} voice, in a cute, cheerful style. Change it any time with /voices.`,
-              `✅ จะพูดด้วยเสียง ${voice} แบบน่ารักสดใส เปลี่ยนได้ทุกเมื่อด้วย /voices`,
-            ),
+            text: t(`✅ I'll use the ${voice} voice${forWhat}. ${voicesSummary(store)}`, `✅ จะใช้เสียง ${voice}${forWhat ? ` ${forWhat}` : ''} ${voicesSummary(store)}`),
             speak: SAMPLE_LINE,
           };
         }
         const more = sub.toLowerCase() === 'more';
         const list = more ? MORE_VOICES : CUTE_VOICES;
-        const current = store.settings().ttsVoice;
-        const pick = list.map(([v, en, th]) => ({ label: `${v === current ? '✅ ' : ''}${v} · ${t(en, th)}`, command: `/voices pick ${v}` }));
-        const rows: Button[][] = [];
-        for (let i = 0; i < pick.length; i += 2) rows.push(pick.slice(i, i + 2));
+        const cur = store.settings();
+        // One row per voice: use it for everything, or only for Thai / only for Japanese.
+        const rows: Button[][] = list.map(([v, en, th]) => [
+          { label: `${v === cur.ttsVoice && !cur.ttsVoiceByLang ? '✅ ' : ''}${v} · ${t(en, th)}`, command: `/voices pick ${v}` },
+          { label: `${cur.ttsVoiceByLang?.th === v ? '✅ ' : ''}🇹🇭`, command: `/voices pick ${v} th` },
+          { label: `${cur.ttsVoiceByLang?.ja === v ? '✅ ' : ''}🇯🇵`, command: `/voices pick ${v} ja` },
+        ]);
         rows.push([more ? { label: t('⬅️ The first 8', '⬅️ 8 เสียงแรก'), command: '/voices' } : { label: t('🎧 6 more voices', '🎧 ฟังอีก 6 เสียง'), command: '/voices more' }]);
         return {
           text: t(
-            `🎧 ${list.length} voice samples are on the way (about a minute), each saying a Japanese and a Thai line in a cute style. Tap your favourite at the end. (About $0.01 of Gemini.)`,
-            `🎧 กำลังส่งตัวอย่าง ${list.length} เสียง (ประมาณหนึ่งนาที) แต่ละเสียงพูดประโยคภาษาญี่ปุ่นและภาษาไทยแบบน่ารัก ฟังแล้วแตะเลือกเสียงที่ชอบท้ายสุดได้เลย (ค่า Gemini ประมาณ $0.01)`,
+            `🎧 ${list.length} voice samples are on the way (about a minute), each saying a Japanese and a Thai line in your speaking style. At the end, tap a voice for everything, or 🇹🇭 / 🇯🇵 to use it for one language. (About $0.01 of Gemini.)`,
+            `🎧 กำลังส่งตัวอย่าง ${list.length} เสียง (ประมาณหนึ่งนาที) แต่ละเสียงพูดประโยคภาษาญี่ปุ่นและภาษาไทยตามสไตล์การพูดของคุณ ท้ายสุดแตะชื่อเสียงเพื่อใช้กับทุกภาษา หรือแตะ 🇹🇭 / 🇯🇵 เพื่อใช้กับภาษาเดียว (ค่า Gemini ประมาณ $0.01)`,
           ),
           samples: {
             line: SAMPLE_LINE,
-            style: CUTE_STYLE,
+            style: sampleStyle,
             items: list.map(([v, en, th], i) => ({ voice: v, caption: `${i + 1}. ${v} · ${t(en, th)}` })),
-            footer: { text: t('Which one do you like? Tap to use it:', 'ชอบเสียงไหน? แตะเพื่อใช้เสียงนั้น:'), buttons: rows },
+            footer: {
+              text: t(`Which one do you like? Tap a name for all languages, or 🇹🇭 / 🇯🇵 for one.\n${voicesSummary(store)}`, `ชอบเสียงไหน? แตะชื่อเพื่อใช้ทุกภาษา หรือ 🇹🇭 / 🇯🇵 เพื่อใช้ภาษาเดียว\n${voicesSummary(store)}`),
+              buttons: rows,
+            },
           },
         };
       }
@@ -681,11 +703,24 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         if (!arg) {
           return {
             text: t(
-              `🔊 Voice for spoken replies: ${current}\nTap one to hear it. Other voices: ${others} (e.g. /ttsvoice Sulafat).`,
-              `🔊 เสียงที่ใช้ตอบ: ${current}\nแตะเพื่อฟังตัวอย่าง เสียงอื่นๆ: ${others} (เช่น /ttsvoice Sulafat)`,
+              `🔊 ${voicesSummary(store)}\nTap one to hear it and use it for everything. One language only: /ttsvoice th Leda, /ttsvoice ja Autonoe. Other voices: ${others}.`,
+              `🔊 ${voicesSummary(store)}\nแตะเพื่อฟังและใช้กับทุกภาษา ใช้กับภาษาเดียว: /ttsvoice th Leda, /ttsvoice ja Autonoe เสียงอื่นๆ: ${others}`,
             ),
             buttons: buttons(current),
           };
+        }
+        const [first = '', second = ''] = arg.split(/\s+/);
+        const langArg = /^(th|thai|ไทย)$/i.test(first) ? 'th' : /^(ja|jp|japanese|ญี่ปุ่น)$/i.test(first) ? 'ja' : null;
+        if (langArg) {
+          const byLang = { ...(store.settings().ttsVoiceByLang ?? {}) };
+          if (/^(off|reset|none)$/i.test(second)) delete byLang[langArg];
+          else {
+            const v = voiceName(second);
+            if (!v) return { text: t(`Which voice? e.g. /ttsvoice ${langArg} Leda`, `เสียงไหนดี? เช่น /ttsvoice ${langArg} Leda`), buttons: buttons(current) };
+            byLang[langArg] = v;
+          }
+          store.updateSettings({ ttsVoiceByLang: Object.keys(byLang).length ? byLang : undefined });
+          return { text: `✅ ${voicesSummary(store)}`, speak: langArg === 'th' ? 'สวัสดีค่ะ วันนี้ก็สู้ๆ ไปด้วยกันนะคะ' : 'こんにちは！今日も一緒にがんばろうね。', buttons: buttons(current) };
         }
         const voice = voiceName(arg);
         if (!voice) {
@@ -697,7 +732,7 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         const unlisted = findVoice(voice)
           ? ''
           : t(` ${voice} isn't in my list of Gemini voices; if you hear nothing, pick one below.`, ` ${voice} ไม่อยู่ในรายชื่อเสียงของ Gemini ที่ฉันรู้จัก ถ้าไม่มีเสียง ให้เลือกจากด้านล่าง`);
-        store.updateSettings({ ttsVoice: voice });
+        store.updateSettings({ ttsVoice: voice, ttsVoiceByLang: undefined });
         return {
           text: t(`✅ Spoken replies will use the ${voice} voice. Here's a sample.`, `✅ จะใช้เสียง ${voice} ในการตอบเป็นเสียง นี่คือตัวอย่าง`) + unlisted,
           speak: t(`Hello! This is how I sound now.`, 'สวัสดี! ตอนนี้เสียงของฉันเป็นแบบนี้นะ'),

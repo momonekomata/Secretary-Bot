@@ -240,11 +240,14 @@ export class Secretary {
     this.agent.checkBudget('gemini');
     const s = this.store.settings();
     const style = opts.style ?? s.speakingStyle ?? '';
-    const voice = voiceName(opts.voice ?? '') ?? voiceName(s.ttsVoice ?? '') ?? voiceName(this.cfg.ttsVoice) ?? 'Kore';
+    const base = voiceName(opts.voice ?? '') ?? voiceName(s.ttsVoice ?? '') ?? voiceName(this.cfg.ttsVoice) ?? 'Kore';
+    // A per-language voice (/ttsvoice th Leda, /ttsvoice ja Autonoe) wins, except when a sample asks for one voice.
+    const voiceFor = (lang: SpeechLang | null) => (!opts.voice && lang ? voiceName(s.ttsVoiceByLang?.[lang] ?? '') : null) ?? base;
     const runs = splitLanguages(spoken);
     const langs = new Set(runs.map((r) => r.lang).filter(Boolean));
     // One language (or too many switches to be worth it): one clip, as before.
     if (langs.size < 2 || runs.length > 24) {
+      const voice = voiceFor(langs.size === 1 ? runs[0].lang : null);
       const speech = await this.speakOne(spoken, voice, style);
       this.saveDebug(speech, voice, [spoken]);
       return speech;
@@ -254,17 +257,17 @@ export class Secretary {
       lang === 'ja' ? [style, 'natural native Japanese pronunciation'].filter(Boolean).join('; ') : lang === 'th' ? [style, 'natural Thai pronunciation'].filter(Boolean).join('; ') : style;
     const clips: (Speech | null)[] = [];
     for (let i = 0; i < runs.length; i += 3) {
-      clips.push(...(await Promise.all(runs.slice(i, i + 3).map((r) => this.speakOne(r.text, voice, styleFor(r.lang))))));
+      clips.push(...(await Promise.all(runs.slice(i, i + 3).map((r) => this.speakOne(r.text, voiceFor(r.lang), styleFor(r.lang))))));
     }
     const ok = clips.filter((c): c is Speech => !!c && c.pcm.length > 0);
     if (!ok.length) return null;
     if (ok.some((c) => c.rate !== ok[0].rate)) {
-      const speech = await this.speakOne(spoken, voice, style); // can't join different formats: one clip instead
-      this.saveDebug(speech, voice, [spoken]);
+      const speech = await this.speakOne(spoken, base, style); // can't join different formats: one clip instead
+      this.saveDebug(speech, base, [spoken]);
       return speech;
     }
     const joined = joinSpeech(ok.map((c) => ({ ...c, pcm: trimSilence(c.pcm, c.rate) })));
-    this.saveDebug(joined, voice, runs.map((r) => `[${r.lang ?? '-'}] ${r.text}`));
+    this.saveDebug(joined, [...new Set(runs.map((r) => voiceFor(r.lang)))].join('+'), runs.map((r) => `[${r.lang ?? '-'}] ${voiceFor(r.lang)}: ${r.text}`));
     return joined;
   }
 
