@@ -26,8 +26,10 @@ export const MODELS: ModelInfo[] = [
 
 /** Models used behind the scenes (not chat choices), for cost estimates. TTS output is audio tokens. */
 const EXTRA_PRICES: Record<string, Pick<ModelInfo, 'provider' | 'input' | 'output'>> = {
-  'gemini-3.8-flash-tts': { provider: 'gemini', input: 0.5, output: 10 },
-  'gemini-3.8-flash-lite-tts': { provider: 'gemini', input: 0.25, output: 5 },
+  'gemini-3.1-flash-tts-preview': { provider: 'gemini', input: 0.5, output: 10 },
+  'gemini-2.5-flash-preview-tts': { provider: 'gemini', input: 0.5, output: 10 },
+  'gemini-2.5-flash-tts': { provider: 'gemini', input: 0.5, output: 10 },
+  'gemini-2.5-pro-preview-tts': { provider: 'gemini', input: 1, output: 20 },
 };
 
 /** Gemini 4 Argon's introductory price ends on 1 December 2026. */

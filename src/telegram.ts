@@ -1,5 +1,5 @@
 import type { IncomingImage } from './agent';
-import { friendlyError, type Channel, type IncomingMessage, type Secretary } from './channel';
+import { friendlyError, speechFailed, type Channel, type IncomingMessage, type Secretary } from './channel';
 import { chunkText } from './chunk';
 import type { Button, CommandReply } from './commands';
 import type { Config } from './config';
@@ -116,6 +116,11 @@ export class Telegram implements Channel {
   private async sendReply(chatId: string, reply: CommandReply) {
     if (reply.file) await this.sendFile(chatId, reply.file.name, reply.file.data, reply.text);
     else if (reply.text) await this.send(chatId, reply.text, reply.buttons);
+    await this.sendSpeech(chatId, reply);
+  }
+
+  /** Sends the spoken part of a reply as a voice bubble; on failure says why (and gives the text). */
+  private async sendSpeech(chatId: string, reply: CommandReply) {
     if (!reply.speak) return;
     try {
       if (!hasFfmpeg()) throw new Error('ffmpeg is not installed');
@@ -125,7 +130,7 @@ export class Telegram implements Channel {
       await this.sendVoice(chatId, await toOggOpus(speech), speech.durationMs);
     } catch (e) {
       this.log('Spoken reply failed:', (e as Error).message);
-      if (!reply.text) await this.send(chatId, reply.speak);
+      await this.send(chatId, reply.text ? speechFailed(e) : `${reply.speak}\n\n${speechFailed(e)}`).catch(() => undefined);
     }
   }
 
@@ -269,7 +274,9 @@ export class Telegram implements Channel {
         message_id: msg.message_id,
         text: reply.text.slice(0, 4000),
         ...(markup ? { reply_markup: markup } : {}),
-      }).catch(() => this.sendReply(chatId, reply));
+      })
+        .then(() => this.sendSpeech(chatId, reply))
+        .catch(() => this.sendReply(chatId, reply));
     } catch (e) {
       this.log('Telegram callback error:', e);
       await this.send(chatId, friendlyError(e)).catch(() => undefined);

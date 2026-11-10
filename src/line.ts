@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingImage } from './agent';
-import { friendlyError, type Channel, type IncomingMessage, type Secretary } from './channel';
+import { friendlyError, speechFailed, type Channel, type IncomingMessage, type Secretary } from './channel';
 import { chunkText } from './chunk';
 import type { Button } from './commands';
 import type { Config } from './config';
@@ -98,16 +98,18 @@ export class Line implements Channel {
   }
 
   /** A LINE audio message for `text`, when spoken replies are possible (Gemini key, ffmpeg, PUBLIC_URL). */
-  private async audioMessage(text: string) {
-    if (!this.files?.enabled || !hasFfmpeg()) return null;
+  /** The spoken reply as a LINE audio message, or the reason it couldn't be made. */
+  private async audioMessage(text: string): Promise<{ audio: { type: string; originalContentUrl: string; duration: number } | null; error?: string }> {
+    if (!this.files?.enabled) return { audio: null, error: `🔇 ${t('Voice replies on LINE need PUBLIC_URL (see SETUP-GUIDE.md).', 'การตอบเป็นเสียงใน LINE ต้องตั้ง PUBLIC_URL ก่อน (ดู SETUP-GUIDE.md)')}` };
     try {
+      if (!hasFfmpeg()) throw new Error('ffmpeg is not installed');
       const speech = await this.secretary.speech(text);
-      if (!speech) return null;
+      if (!speech) throw new Error('no audio returned');
       const url = this.files.add('reply.m4a', 'audio/mp4', await toM4a(speech), 3600_000);
-      return { type: 'audio', originalContentUrl: url, duration: speech.durationMs };
+      return { audio: { type: 'audio', originalContentUrl: url, duration: speech.durationMs } };
     } catch (e) {
       this.log('Spoken reply failed:', (e as Error).message);
-      return null;
+      return { audio: null, error: speechFailed(e) };
     }
   }
 
@@ -182,9 +184,9 @@ export class Line implements Channel {
           const link = this.files?.enabled ? this.files.add(reply.file.name, 'application/octet-stream', reply.file.data, 7 * 24 * 3600_000) : null;
           text += `\n${fileNote(reply.file.name, link)}`;
         }
-        const audio = reply.speak ? await this.audioMessage(reply.speak) : null;
-        if (reply.speak && !audio && !text) text = reply.speak;
-        await this.respond(ev.replyToken, chatId, text, reply.buttons, audio ? [audio] : []);
+        const spoken = reply.speak ? await this.audioMessage(reply.speak) : null;
+        if (spoken?.error) text = [text || reply.speak, spoken.error].filter(Boolean).join('\n\n');
+        await this.respond(ev.replyToken, chatId, text, reply.buttons, spoken?.audio ? [spoken.audio] : []);
       }
     } catch (e) {
       this.log('LINE handler error:', e);

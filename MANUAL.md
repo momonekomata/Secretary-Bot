@@ -146,7 +146,7 @@ It remembers the recent conversation. `/reset` forgets the conversation but keep
 |---|---|
 | `/voice off` / `/voice notes` / `/voice always` | When to answer with a spoken voice message |
 | `/say <text>` | Speak any text, e.g. `/say おはようございます` |
-| `/ttsvoice <voice>` | Pick the speaking voice (Kore, Puck, Charon, Fenrir, Leda, Aoede, Zephyr, Orus…) |
+| `/ttsvoice` | Pick the speaking voice with buttons (plays a sample); or `/ttsvoice Sulafat` for any of Gemini's 30 voices |
 | `/translate <language>` | Which language voice notes are translated into |
 
 ### Settings and costs
@@ -394,7 +394,8 @@ In Japanese practice scenes it plays a character and gently corrects your mistak
   - `/voice notes` (default): answers voice notes with voice
   - `/voice always`: speaks every reply
   - `/voice off`: never speaks
-- `/say <text>` speaks anything, which is handy for Japanese pronunciation. `/ttsvoice Puck` changes the voice.
+- `/say <text>` speaks anything, which is handy for Japanese pronunciation. `/ttsvoice` shows voice buttons; tap one to hear it.
+- If a voice reply can't be made, the bot says why (e.g. no Gemini speech model on the key, quota used up) instead of staying silent.
 
 ---
 
@@ -507,6 +508,7 @@ Edit `data/.env` on the NAS, then restart the container. Only the first group is
 | A feature says a key is missing | Add the key to `data/.env` and restart the container. |
 | "Daily limit reached" | A cost cap was hit; it resets at midnight, or raise it now with `/limit` (e.g. `/limit gemini 1`). |
 | Still blocked after raising the Gemini or Claude cap | The **all AI together** cap (from `DAILY_HARD_LIMIT_USD` in `.env`) also applies. The block message says which cap stopped it; send `/limit all 5` or `/limit all off`. |
+| No voice, or "🔇 I couldn't make the voice reply" | The message gives the reason. Voice uses Gemini (GEMINI_API_KEY) even when chatting with Claude. Try `/say hello`; `/status` shows the speech model in use. |
 | A slip or food was logged wrong | Tell it ("that was rent, not transfer"), or use `/budget edit`, `/budget remove`, `/food remove`. |
 | Health import shows 0 days | Send the import report to the developer; it lists the columns found in each file. |
 | It's "typing" for a long time | Big jobs (health import, email scan, long research) take a minute or two; `/healthimport status` shows import progress. |

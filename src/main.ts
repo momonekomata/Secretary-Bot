@@ -97,7 +97,10 @@ async function status(): Promise<string> {
         ? t(' ⚠️ needs GEMINI_API_KEY', ' ⚠️ ต้องมี GEMINI_API_KEY')
         : !hasFfmpeg()
           ? t(' ⚠️ needs ffmpeg', ' ⚠️ ต้องมี ffmpeg')
-          : t(` ✅ (${config.ttsModel}, voice ${config.ttsVoice})`, ` ✅ (${config.ttsModel}, เสียง ${config.ttsVoice})`);
+          : t(
+              ` ✅ (${secretary.ttsModel ?? (config.ttsModel || 'model picked on first use')}, voice ${store.settings().ttsVoice ?? config.ttsVoice})`,
+              ` ✅ (${secretary.ttsModel ?? (config.ttsModel || 'เลือกโมเดลเมื่อใช้ครั้งแรก')}, เสียง ${store.settings().ttsVoice ?? config.ttsVoice})`,
+            );
   lines.push(
     t(`Spoken replies: ${voiceMode}${voiceState}`, `การตอบเป็นเสียง: ${voiceMode}${voiceState}`),
     t(

@@ -4,7 +4,7 @@ import { runCommand, SLOW_COMMANDS, type Button, type CommandReply } from './com
 import type { Config } from './config';
 import type { GenerateContent } from './llm/gemini';
 import type { Store } from './store';
-import { speakable, synthesize, toGeminiAudio, type Speech } from './audio';
+import { findVoice, modelUnavailable, speakable, synthesize, toGeminiAudio, TTS_MODELS, type Speech } from './audio';
 import { fileToInput, UserFacingError } from './documents';
 import type { JapaneseDaily } from './japanese';
 import type { Reviews } from './review';
@@ -84,6 +84,22 @@ function thaiPassthrough(msg: string): string {
   if (/^Google sign-in has expired or was revoked/.test(msg)) return 'การเชื่อมต่อ Google หมดอายุหรือถูกยกเลิก รัน `npm run google-auth` ใหม่อีกครั้ง';
   return msg;
 }
+
+/** One line telling the user why a voice reply couldn't be made. */
+export function speechFailed(e: unknown): string {
+  const raw = e instanceof BudgetExceeded ? e.message : String((e as Error)?.message ?? e);
+  const reason = /ffmpeg/i.test(raw)
+    ? t('ffmpeg is missing on the server.', 'เซิร์ฟเวอร์ไม่มี ffmpeg')
+    : /no audio returned/i.test(raw)
+      ? t('Gemini returned no audio.', 'Gemini ไม่ได้ส่งเสียงกลับมา')
+      : /No Gemini speech model/i.test(raw)
+        ? t('no Gemini speech model is available on your API key.', 'API key นี้ใช้โมเดลเสียงของ Gemini ไม่ได้เลย')
+        : /\b429\b|quota|RESOURCE_EXHAUSTED/i.test(raw)
+          ? t('the Gemini quota or credit ran out.', 'โควตาหรือเครดิต Gemini หมด')
+          : raw.slice(0, 200);
+  return `🔇 ${t("I couldn't make the voice reply", 'สร้างเสียงตอบกลับไม่ได้')}: ${reason}`;
+}
+
 
 /** Platform-independent message handling: access control, commands, voice notes, chat. */
 export class Secretary {
@@ -217,8 +233,24 @@ export class Secretary {
     this.agent.checkBudget('gemini');
     const s = this.store.settings();
     const prompt = s.speakingStyle ? `Say ${s.speakingStyle}: ${spoken}` : spoken;
-    return synthesize(this.gemini, this.cfg.ttsModel, s.ttsVoice ?? this.cfg.ttsVoice, prompt, (u) => this.agent.recordUsage(u, 'speech'));
+    const voice = findVoice(s.ttsVoice ?? '') ?? findVoice(this.cfg.ttsVoice) ?? 'Kore';
+    const models = [...new Set([this.ttsModel, this.cfg.ttsModel, ...TTS_MODELS].filter((m): m is string => !!m))];
+    let last: unknown = null;
+    for (const model of models) {
+      try {
+        const speech = await synthesize(this.gemini, model, voice, prompt, (u) => this.agent.recordUsage(u, 'speech'));
+        this.ttsModel = model;
+        return speech;
+      } catch (e) {
+        if (!modelUnavailable(e)) throw e;
+        last = e;
+      }
+    }
+    throw new Error(`No Gemini speech model is available on this API key (tried ${models.join(', ')}): ${(last as Error)?.message ?? ''}`);
   }
+
+  /** The speech model that last worked (shown in /status). */
+  ttsModel: string | null = null;
 
   private async voice(m: IncomingMessage): Promise<{ text: string; reply?: string }> {
     if (!this.gemini) return { text: t('🎙️ Voice notes need a Gemini API key (GEMINI_API_KEY), even when chatting with Claude.', '🎙️ ข้อความเสียงต้องใช้คีย์ API ของ Gemini (GEMINI_API_KEY) แม้จะคุยกับ Claude อยู่ก็ตาม') };
