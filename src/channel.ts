@@ -4,7 +4,7 @@ import { runCommand, SLOW_COMMANDS, type Button, type CommandReply } from './com
 import type { Config } from './config';
 import type { GenerateContent } from './llm/gemini';
 import type { Store } from './store';
-import { findVoice, modelUnavailable, speakable, synthesize, toGeminiAudio, TTS_MODELS, type Speech } from './audio';
+import { voiceName, modelUnavailable, speakable, synthesize, toGeminiAudio, TTS_MODELS, type Speech } from './audio';
 import { fileToInput, UserFacingError } from './documents';
 import type { JapaneseDaily } from './japanese';
 import type { Reviews } from './review';
@@ -233,7 +233,7 @@ export class Secretary {
     this.agent.checkBudget('gemini');
     const s = this.store.settings();
     const prompt = s.speakingStyle ? `Say ${s.speakingStyle}: ${spoken}` : spoken;
-    const voice = findVoice(s.ttsVoice ?? '') ?? findVoice(this.cfg.ttsVoice) ?? 'Kore';
+    const voice = voiceName(s.ttsVoice ?? '') ?? voiceName(this.cfg.ttsVoice) ?? 'Kore';
     const models = [...new Set([this.ttsModel, this.cfg.ttsModel, ...TTS_MODELS].filter((m): m is string => !!m))];
     let last: unknown = null;
     for (const model of models) {

@@ -61,7 +61,7 @@ describe('personality', () => {
 
     expect((await runCommand('/ttsvoice Zephyr', ctx))!.speak).toBeTruthy();
     expect(store.settings().ttsVoice).toBe('Zephyr');
-    expect((await runCommand('/ttsvoice ???', ctx))!.text).toMatch(/isn't one of Gemini's voices/);
+    expect((await runCommand('/ttsvoice ???', ctx))!.text).toMatch(/isn't a voice name/);
   });
 });
 
@@ -71,18 +71,18 @@ describe('spoken replies: model fallback and voice choice', () => {
 
   it('moves past a speech model that is not available and remembers the one that works', async () => {
     const { Secretary } = await import('../channel');
-    const notFound = new Error('[404 Not Found] models/gemini-3.1-flash-tts-preview is not found for API version v1beta');
+    const notFound = new Error('[404 Not Found] models/gemini-3.8-flash-tts is not found for API version v1beta');
     const { generate, calls } = fakeGemini([notFound, audio(), audio()]);
     const { store, cfg, agent, briefings } = setup();
     const s = new Secretary(cfg, store, agent, briefings, generate, async () => '');
-    store.updateSettings({ ttsVoice: 'NoSuchVoice' });
+    store.updateSettings({ ttsVoice: 'not a voice!' });
     expect((await s.speech('Hello'))?.rate).toBe(24000);
-    expect(calls.map((c) => c.model)).toEqual(['gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts']);
+    expect(calls.map((c) => c.model)).toEqual(['gemini-3.8-flash-tts', 'gemini-3.1-flash-tts-preview']);
     // A bad saved voice falls back to a real one.
     expect(JSON.stringify(calls[1].config)).toContain('"voiceName":"Kore"');
     await s.speech('Again');
-    expect(calls[2].model).toBe('gemini-2.5-flash-preview-tts');
-    expect(s.ttsModel).toBe('gemini-2.5-flash-preview-tts');
+    expect(calls[2].model).toBe('gemini-3.1-flash-tts-preview');
+    expect(s.ttsModel).toBe('gemini-3.1-flash-tts-preview');
   });
 
   it('does not hide other errors, and explains failures in plain words', async () => {
@@ -105,5 +105,9 @@ describe('spoken replies: model fallback and voice choice', () => {
     expect(store.settings().ttsVoice).toBe('Puck');
     expect(r.speak).toBeTruthy();
     expect(r.buttons!.flat().find((b) => b.label.startsWith('✅'))!.command).toBe('/ttsvoice Puck');
+    // A voice outside the list (newer models add voices) is tried, with a note.
+    const custom = (await runCommand('/ttsvoice Nova', ctx))!;
+    expect(store.settings().ttsVoice).toBe('Nova');
+    expect(custom.text).toContain("Nova isn't in my list of Gemini voices");
   });
 });
