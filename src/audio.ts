@@ -74,6 +74,9 @@ export interface Speech {
   pcm: Buffer;
   rate: number;
   durationMs: number;
+  /** What Gemini sent, before cleaning (kept for diagnosis). */
+  raw?: Buffer;
+  mimeType?: string;
 }
 
 /** Turns text into speech with a Gemini TTS model (16-bit mono PCM). */
@@ -116,8 +119,71 @@ export async function synthesize(generate: GenerateContent, model: string, voice
   const part = res.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
   if (!part?.inlineData?.data) return null;
   const rate = Number(/rate=(\d+)/.exec(part.inlineData.mimeType ?? '')?.[1] ?? 24000);
-  const pcm = Buffer.from(part.inlineData.data, 'base64');
-  return { pcm, rate, durationMs: Math.round((pcm.length / 2 / rate) * 1000) };
+  const raw = Buffer.from(part.inlineData.data, 'base64');
+  const pcm = cleanTail(raw, rate);
+  return { pcm, rate, durationMs: Math.round((pcm.length / 2 / rate) * 1000), raw, mimeType: part.inlineData.mimeType ?? '' };
+}
+
+/**
+ * Removes a noise tail after the speech (Gemini speech sometimes ends with a burst of static) and fades out.
+ * Works on 16-bit little-endian mono PCM. A tail counts as noise when it is
+ * hiss for at least 260 ms (many zero crossings, like white noise), or a steady buzz for at least 400 ms.
+ * Short sounds such as a final "s" are kept. Never removes more than half the clip.
+ */
+export function cleanTail(pcm: Buffer, rate: number): Buffer {
+  const n = Math.floor(pcm.length / 2);
+  const win = Math.max(1, Math.round(rate * 0.02)); // 20 ms windows
+  const windows = Math.floor(n / win);
+  if (windows < 10) return fadeOut(pcm.subarray(0, n * 2), rate);
+  const rms: number[] = [];
+  const zcr: number[] = [];
+  for (let w = 0; w < windows; w++) {
+    let sum = 0;
+    let crossings = 0;
+    let prev = pcm.readInt16LE(w * win * 2);
+    for (let i = 0; i < win; i++) {
+      const v = pcm.readInt16LE((w * win + i) * 2);
+      sum += v * v;
+      if ((v >= 0) !== (prev >= 0)) crossings++;
+      prev = v;
+    }
+    rms.push(Math.sqrt(sum / win));
+    zcr.push(crossings / win);
+  }
+  const loudest = [...rms].sort((a, b) => a - b)[Math.floor(windows * 0.95)] || 1;
+  const silent = (w: number) => rms[w] < loudest * 0.02;
+  // Walk back over trailing silence, then over the noise run.
+  let end = windows;
+  while (end > 0 && silent(end - 1)) end--;
+  let start = end;
+  const hiss = (w: number) => zcr[w] > 0.3 && rms[w] > loudest * 0.02;
+  while (start > 0 && hiss(start - 1)) start--;
+  let cut = end - start >= 13 ? start : -1; // >= 260 ms of hiss
+  if (cut < 0) {
+    // Steady noise (a buzz): loudness within ±20% of the tail's median for >= 400 ms (longer and steadier than a held vowel).
+    let s = end;
+    while (s > 0 && end - s < windows / 2) {
+      const run = rms.slice(s - 1, end).sort((a, b) => a - b);
+      const median = run[Math.floor(run.length / 2)];
+      if (median < loudest * 0.02 || run[0] < median * 0.8 || run[run.length - 1] > median * 1.2) break;
+      s--;
+    }
+    if (end - s >= 20) cut = s;
+  }
+  if (cut < 0 || cut < windows / 2) return fadeOut(pcm.subarray(0, n * 2), rate);
+  return fadeOut(pcm.subarray(0, cut * win * 2), rate);
+}
+
+/** A 30 ms fade at the end, so the clip never stops on a click. */
+function fadeOut(pcm: Buffer, rate: number): Buffer {
+  const out = Buffer.from(pcm);
+  const n = Math.floor(out.length / 2);
+  const len = Math.min(n, Math.round(rate * 0.03));
+  for (let i = 0; i < len; i++) {
+    const at = (n - len + i) * 2;
+    out.writeInt16LE(Math.round(out.readInt16LE(at) * (1 - (i + 1) / len)), at);
+  }
+  return out;
 }
 
 /** Telegram voice bubble: Ogg/Opus. */
