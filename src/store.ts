@@ -90,7 +90,8 @@ export interface PersonalFood {
   protein: number;
   carbs: number;
   fat: number;
-  source: 'openfoodfacts' | 'label' | 'user' | 'estimate';
+  /** Where the numbers come from: thaifcd = Thai Food Composition Database (INMU), usda = USDA FoodData Central. */
+  source: 'openfoodfacts' | 'label' | 'user' | 'estimate' | 'thaifcd' | 'usda';
   updatedAt: string;
   timesLogged: number;
 }

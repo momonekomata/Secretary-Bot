@@ -306,6 +306,7 @@ Thai words work in commands too, e.g. `/budget set อาหาร 6000`.
   3. not found: send a photo of the **nutrition label** (ฉลากโภชนาการ / 栄養成分表示) and it reads and saves it, or it estimates.
 
   Values are scaled to what you ate (it asks if the portion isn't clear). Correct anything by telling it ("#12 is 220 kcal per pack"); the correction is kept. Foods you log by name ("my usual protein shake") are looked up in your database too.
+- **Food without a barcode:** your own database first. For **Thai dishes** the bot looks up the **Thai Food Composition Database** of Mahidol University's Institute of Nutrition (INMU) with its web search. For **ingredients and international food** it uses **USDA FoodData Central** (the US government's free database). Whatever it looks up is saved to your database, so each dish is looked up only once, and it tells you where the numbers come from.
 - `/fooddb` lists your foods, most-logged first; `/export` includes them as `food_database.csv`.
 - `/food` shows today against your calorie target. `/food yesterday` and `/food 2026-11-01` show other days; `/food remove 12` deletes an entry.
 - **Body profile:** tell it your sex, birth year, height, weight, activity level and goal (lose / maintain / gain). `/profile` shows it.
@@ -492,6 +493,7 @@ Edit `data/.env` on the NAS, then restart the container. Only the first group is
 | `BOT_DAILY_NUDGE_HOUR` | off | Hour for a WaniKani "reviews waiting" nudge |
 | `WANIKANI_TOKEN` | — | WaniKani (needs the `reviews:create` permission for `/review`) |
 | `GOOGLE_MAPS_API_KEY` | — | Places and travel times |
+| `USDA_API_KEY` | USDA's shared demo key (a few lookups an hour) | Free key for USDA FoodData Central lookups |
 | `data/vertex-key.json` + `VERTEX_LOCATION`, `VERTEX_PROJECT`, `GEMINI_VIA_VERTEX` | off until the key file is there | Run Gemini through Vertex AI so Google Cloud credit pays for it (SETUP-GUIDE Part 6); the Gemini API key stays as backup |
 | `VOICE_TRANSLATE_TO` | `English` | Voice note translation language |
 | `VOICE_REPLIES` | `voice-notes` | `off`, `voice-notes` or `always` |

@@ -137,3 +137,55 @@ describe('/fooddb', () => {
     expect(store.foodDb('telegram:1')).toHaveLength(1);
   });
 });
+
+describe('USDA FoodData Central and the Thai Food Composition Database', () => {
+  const usdaResponse = {
+    foods: [
+      { fdcId: 168878, description: 'Rice, white, long-grain, regular, enriched, cooked', dataType: 'SR Legacy', foodNutrients: [
+        { nutrientId: 1008, nutrientNumber: '208', nutrientName: 'Energy', unitName: 'KCAL', value: 130 },
+        { nutrientId: 1003, nutrientNumber: '203', nutrientName: 'Protein', unitName: 'G', value: 2.69 },
+        { nutrientId: 1005, nutrientNumber: '205', nutrientName: 'Carbohydrate, by difference', unitName: 'G', value: 28.17 },
+        { nutrientId: 1004, nutrientNumber: '204', nutrientName: 'Total lipid (fat)', unitName: 'G', value: 0.28 },
+      ] },
+      // Foundation foods may give energy only as Atwater energy (and in kJ too).
+      { fdcId: 748967, description: 'Eggs, Grade A, Large, egg whole', dataType: 'Foundation', foodNutrients: [
+        { nutrientId: 1062, nutrientNumber: '268', nutrientName: 'Energy', unitName: 'kJ', value: 599 },
+        { nutrientId: 2048, nutrientNumber: '958', nutrientName: 'Energy (Atwater Specific Factors)', unitName: 'KCAL', value: 143 },
+        { nutrientId: 1003, nutrientNumber: '203', nutrientName: 'Protein', unitName: 'G', value: 12.4 },
+        { nutrientId: 1004, nutrientNumber: '204', nutrientName: 'Total lipid (fat)', unitName: 'G', value: 9.96 },
+      ] },
+      { fdcId: 1, description: 'No energy listed', dataType: 'Survey (FNDDS)', foodNutrients: [] },
+    ],
+  };
+
+  it('searches generic foods per 100 g, with the demo key unless a key is set', async () => {
+    const { usdaSearch, usdaLine } = await import('../nutrition');
+    const urls: string[] = [];
+    const fetchFn = (async (url: string) => (urls.push(url), Response.json(usdaResponse))) as typeof fetch;
+    const found = await usdaSearch('rice, white, cooked', '', fetchFn);
+    expect(urls[0]).toContain('api.nal.usda.gov/fdc/v1/foods/search?');
+    expect(urls[0]).toContain('api_key=DEMO_KEY');
+    expect(urls[0]).toContain('dataType=SR+Legacy');
+    expect(found).toEqual([
+      { fdcId: 168878, name: 'Rice, white, long-grain, regular, enriched, cooked', dataType: 'SR Legacy', kcal: 130, protein: 2.7, carbs: 28.2, fat: 0.3 },
+      { fdcId: 748967, name: 'Eggs, Grade A, Large, egg whole', dataType: 'Foundation', kcal: 143, protein: 12.4, carbs: 0, fat: 10 },
+    ]);
+    expect(usdaLine(found[0])).toBe('Rice, white, long-grain, regular, enriched, cooked [SR Legacy, FDC 168878] per 100 g: 130 kcal · P 2.7 g · C 28.2 g · F 0.3 g');
+    await usdaSearch('egg', 'my-key', fetchFn);
+    expect(urls[1]).toContain('api_key=my-key');
+    const limited = (async () => new Response('', { status: 429 })) as typeof fetch;
+    await expect(usdaSearch('egg', '', limited)).rejects.toThrow(/too many requests for this hour \(set a free USDA_API_KEY/);
+  });
+
+  it('is a tool the AI can use, and looked-up values are saved with where they came from', async () => {
+    vi.stubGlobal('fetch', async () => Response.json(usdaResponse));
+    const store = new Store(null);
+    const ctx = { chatKey: 'c', store, cfg: testConfig(), google: null, now: () => NOW };
+    const r = await runTool('usda_food_search', { query: 'cooked rice' }, ctx);
+    expect(r.content).toMatch(/^USDA FoodData Central, per 100 g:\nRice, white/);
+    await runTool('food_db_save', { barcode: '', name: 'ข้าวมันไก่', brand: '', serving: '1 plate (300 g)', kcal: 596, protein_g: 23, carbs_g: 78, fat_g: 21, source: 'thaifcd' }, ctx);
+    expect(store.foodDb('c')[0]).toMatchObject({ name: 'ข้าวมันไก่', source: 'thaifcd' });
+    const { systemPrompt } = await import('../agent');
+    expect(systemPrompt({ botName: 'Bot', persona: '' }, false)).toContain('Thai Food Composition Database of the Institute of Nutrition, Mahidol University (INMU');
+  });
+});

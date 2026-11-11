@@ -7,6 +7,7 @@ import { history, type HealthData } from './healthdb';
 import { formatDay as formatWatchDay } from './healthsync';
 import { barcodeDigits } from './barcode';
 import { foodLine, lookupBarcode } from './fooddb';
+import { usdaLine, usdaSearch } from './nutrition';
 import { budgetAlerts, CATEGORY_KEYS, findCategory, logTxn, report, scanEmail, scanSummary, txnLine } from './money';
 import { fetchNews, formatNews } from './news';
 import type { City, Store } from './store';
@@ -18,7 +19,7 @@ import { fetchWaniKani } from './wanikani';
 export interface ToolContext {
   chatKey: string;
   store: Store;
-  cfg: Pick<Config, 'timezone' | 'wanikaniToken' | 'news' | 'weather'>;
+  cfg: Pick<Config, 'timezone' | 'wanikaniToken' | 'news' | 'weather'> & Partial<Pick<Config, 'usdaKey'>>;
   google: Google | null;
   maps?: Maps | null;
   health?: HealthData | null;
@@ -123,8 +124,18 @@ const HEALTH: ToolSpec[] = [
       protein_g: num('Protein per serving, g.'),
       carbs_g: num('Carbohydrates per serving, g.'),
       fat_g: num('Fat per serving, g.'),
-      source: oneOf(['label', 'user', 'estimate'], '"label" = read from a nutrition label, "user" = the user told you, "estimate" = your estimate.'),
+      source: oneOf(
+        ['label', 'user', 'estimate', 'thaifcd', 'usda'],
+        '"label" = read from a nutrition label, "user" = the user told you, "thaifcd" = Thai Food Composition Database (INMU), "usda" = USDA FoodData Central, "estimate" = your estimate.',
+      ),
     }),
+  },
+  {
+    name: 'usda_food_search',
+    description:
+      'Look up a generic food or ingredient in USDA FoodData Central (US government food composition data, per 100 g): e.g. "egg, fried", "rice, white, cooked", "chicken breast, roasted". ' +
+      'Search in English. Use it for ingredients and international foods; scale per 100 g values to the portion eaten.',
+    parameters: obj({ query: str('Food in English, e.g. "rice, white, cooked".') }),
   },
   {
     name: 'food_db_search',
@@ -508,6 +519,15 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
         const where = r.found === 'mine' ? "from the user's personal food database" : 'from Open Food Facts (now saved to the personal database)';
         return ok(`Found ${where}:\n${foodLine(r.food)}\nValues are per ${r.food.serving}. Scale them to what the user ate (ask if unclear), then log with food_log_add using food_db_id ${r.food.id}.`);
       }
+      case 'usda_food_search': {
+        if (!s('query')) return fail('What food?');
+        const found = await usdaSearch(s('query'), ctx.cfg.usdaKey);
+        return ok(
+          found.length
+            ? `USDA FoodData Central, per 100 g:\n${found.map(usdaLine).join('\n')}\nPick the closest match, scale to the portion, and save it with food_db_save (source "usda") if the user may eat it again.`
+            : `Nothing in USDA FoodData Central for "${s('query')}". Try other English words, or estimate.`,
+        );
+      }
       case 'food_db_save': {
         const n = (k: string) => Math.max(0, Math.round((Number(a[k]) || 0) * 10) / 10);
         if (!s('name')) return fail('A name is needed.');
@@ -521,7 +541,7 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
           protein: n('protein_g'),
           carbs: n('carbs_g'),
           fat: n('fat_g'),
-          source: (['label', 'user', 'estimate'].includes(s('source')) ? s('source') : 'user') as 'label' | 'user' | 'estimate',
+          source: (['label', 'user', 'estimate', 'thaifcd', 'usda'].includes(s('source')) ? s('source') : 'user') as 'label' | 'user' | 'estimate' | 'thaifcd' | 'usda',
         });
         return ok(`Saved to the personal food database: ${foodLine(saved)}`);
       }
