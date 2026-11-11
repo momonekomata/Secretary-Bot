@@ -45,10 +45,20 @@ export interface TurnResult {
   text: string;
   refused?: boolean;
   truncated?: boolean;
+  /** The reply used all its tool steps (the text is the model's summary of what's done and left). */
+  outOfSteps?: boolean;
 }
 
 export interface Provider {
   run(req: TurnRequest): Promise<TurnResult>;
 }
 
-export const MAX_STEPS = 12;
+export const MAX_STEPS = 20;
+
+/**
+ * Told to the model when a reply used all its tool steps: one last answer without tools, so the user hears what
+ * was done instead of getting nothing.
+ */
+export const OUT_OF_STEPS =
+  '[System note] You have used all the tool steps for this message. Do not call tools now. Reply to the user: ' +
+  'say briefly what you completed and what is still left, and that they can say "continue" to go on.';

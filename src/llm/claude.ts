@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { MAX_STEPS, type Provider, type ToolSpec, type TurnRequest, type TurnResult } from './types';
+import { MAX_STEPS, OUT_OF_STEPS, type Provider, type ToolSpec, type TurnRequest, type TurnResult } from './types';
 
 type Message = Anthropic.Beta.BetaMessage;
 type CreateParams = Anthropic.Beta.MessageCreateParamsNonStreaming;
@@ -52,12 +52,19 @@ export class ClaudeProvider implements Provider {
       ...(req.note ? [{ role: 'system' as const, content: req.note }] : []),
     ];
 
-    for (let step = 0; step < MAX_STEPS; step++) {
+    for (let step = 0; step <= MAX_STEPS; step++) {
+      // The step after the last: no more tools, just tell the user what was done and what's left.
+      const finalStep = step === MAX_STEPS;
+      if (finalStep) {
+        const last = messages[messages.length - 1];
+        if (last.role === 'user' && Array.isArray(last.content)) last.content = [...last.content, { type: 'text', text: OUT_OF_STEPS }];
+        else messages.push({ role: 'user', content: OUT_OF_STEPS });
+      }
       const res = await this.create({
         model: req.model,
         max_tokens: 16000,
         system: req.system,
-        ...(tools.length ? { tools } : {}),
+        ...(tools.length ? { tools, ...(finalStep ? { tool_choice: { type: 'none' as const } } : {}) } : {}),
         messages,
         thinking: { type: 'adaptive' },
         output_config: { effort: req.effort },
@@ -80,9 +87,9 @@ export class ClaudeProvider implements Provider {
 
       messages.push({ role: 'assistant', content: res.content });
 
-      if (res.stop_reason === 'pause_turn') continue; // long server-tool turn: send it back to continue
+      if (res.stop_reason === 'pause_turn' && !finalStep) continue; // long server-tool turn: send it back to continue
 
-      if (res.stop_reason === 'tool_use') {
+      if (res.stop_reason === 'tool_use' && !finalStep) {
         const calls = res.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === 'tool_use');
         const results = await Promise.all(
           calls.map(async (call): Promise<Anthropic.Beta.BetaToolResultBlockParam> => {
@@ -99,7 +106,7 @@ export class ClaudeProvider implements Provider {
         .map((b) => b.text)
         .join('')
         .trim();
-      return { text, truncated: res.stop_reason === 'max_tokens' };
+      return { text, truncated: res.stop_reason === 'max_tokens', ...(finalStep ? { outOfSteps: true } : {}) };
     }
     return { text: '' };
   }

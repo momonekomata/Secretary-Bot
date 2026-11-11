@@ -133,10 +133,14 @@ export async function fetchThaiFcd(ref: { dbcode: string; id: string; url?: stri
   // The export first; then the page the user linked (with its own parameters), else the page by number.
   const pages = [`${FCD}/food_name_result_std_excel/?dbcode=${db}&food_id=${id}&mode=EXCEL`, ref.url ?? `${FCD}/food_name/?dbcode=${db}&id=${id}`];
   for (const url of pages) {
-    const res = await fetchFn(url, { headers: { 'User-Agent': 'SecretaryBot/1.0 (personal Telegram bot)' } });
-    if (!res.ok) continue;
-    const food = parseThaiFcd(await res.text());
-    if (food) return food;
+    try {
+      const res = await fetchFn(url, { headers: { 'User-Agent': 'SecretaryBot/1.0 (personal Telegram bot)' }, signal: AbortSignal.timeout(20_000) });
+      if (!res.ok) continue;
+      const food = parseThaiFcd(await res.text());
+      if (food) return food;
+    } catch {
+      // Timed out or unreachable: try the next address.
+    }
   }
   return null;
 }

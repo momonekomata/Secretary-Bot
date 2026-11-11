@@ -1,8 +1,8 @@
-import { GoogleGenAI, ThinkingLevel, type Content, type GenerateContentParameters, type GenerateContentResponse, type Part } from '@google/genai';
+import { FunctionCallingConfigMode, GoogleGenAI, ThinkingLevel, type Content, type GenerateContentParameters, type GenerateContentResponse, type Part } from '@google/genai';
 import type { Effort } from '../config';
 import type { Usage } from '../models';
 import { GEMINI_WEB_TOOLS, runGeminiWebTool } from './gemini-web';
-import { MAX_STEPS, type Provider, type TurnRequest, type TurnResult } from './types';
+import { MAX_STEPS, OUT_OF_STEPS, type Provider, type TurnRequest, type TurnResult } from './types';
 
 /** The one SDK call the provider needs; injectable for tests. */
 export type GenerateContent = (params: GenerateContentParameters) => Promise<GenerateContentResponse>;
@@ -116,6 +116,20 @@ export class GeminiProvider implements Provider {
 
       return { text: geminiText(res), truncated: reason === 'MAX_TOKENS', refused: /SAFETY|PROHIBITED|BLOCKLIST|SPII/.test(reason) };
     }
-    return { text: '' };
+    // Out of tool steps: one last answer with function calling off, so the reply says what was done and what's left.
+    const last = contents[contents.length - 1];
+    if (last.role === 'user') last.parts = [...(last.parts ?? []), { text: OUT_OF_STEPS }];
+    else contents.push({ role: 'user', parts: [{ text: OUT_OF_STEPS }] });
+    const res = await generateWithThinking(
+      this.generate,
+      {
+        model: req.model,
+        contents,
+        config: { systemInstruction: req.system, ...(tools ? { tools, toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.NONE } } } : {}) },
+      },
+      req.effort,
+    );
+    req.onUsage(geminiUsage(req.model, res));
+    return { text: geminiText(res), outOfSteps: true };
   }
 }
