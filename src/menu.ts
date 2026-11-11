@@ -28,6 +28,7 @@ export const MENU: [string, string, string][] = [
   ['places', 'Find places nearby', 'ค้นหาสถานที่ใกล้ๆ'],
   ['budget', 'Spending this month and budgets', 'รายจ่ายเดือนนี้และงบประมาณ'],
   ['food', "Today's food and calories", 'อาหารและแคลอรี่วันนี้'],
+  ['fooddb', 'Your food database (barcodes, labels)', 'ฐานข้อมูลอาหารของคุณ (บาร์โค้ด ฉลาก)'],
   ['bmi', 'BMI, BMR and calorie target', 'BMI, BMR และเป้าหมายแคลอรี่'],
   ['profile', 'Your body profile', 'ข้อมูลร่างกายของคุณ'],
   ['weight', 'Log or show your weight', 'บันทึกหรือดูน้ำหนัก'],

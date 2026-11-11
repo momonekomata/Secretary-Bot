@@ -1,4 +1,5 @@
 import { BudgetExceeded, type Agent, type IncomingImage } from './agent';
+import { findBarcodes } from './barcode';
 import type { Usage } from './models';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -221,7 +222,10 @@ export class Secretary {
       };
     }
     if (!m.text && !m.images?.length) return null;
-    const reply = await this.agent.reply({ chatKey: m.chatKey, text: m.text, images: m.images, userName: m.userName });
+    // Product barcodes in photos are read here (on the NAS, no AI) and passed on, so the AI can look the food up.
+    const codes = m.images?.length ? [...new Set((await Promise.all(m.images.map((i) => findBarcodes(Buffer.from(i.data, 'base64'))))).flat())] : [];
+    const text = codes.length ? `${m.text}\n[Barcode in the photo: ${codes.join(', ')}]`.trim() : m.text;
+    const reply = await this.agent.reply({ chatKey: m.chatKey, text, images: m.images, userName: m.userName });
     return { text: reply, ...(mode === 'always' ? { speak: reply } : {}) };
   }
 
