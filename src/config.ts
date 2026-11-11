@@ -117,6 +117,8 @@ export const config = {
   wanikaniToken: process.env.WANIKANI_TOKEN ?? '',
   /** Google Maps Platform key (Places API (New) + Routes API). */
   mapsKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
+  /** USDA FoodData Central key (free); empty uses USDA's shared DEMO_KEY, which has a low hourly limit. */
+  usdaKey: process.env.USDA_API_KEY ?? '',
 
   /**
    * Gemini through Vertex AI (Google Cloud billing, so Cloud/trial credits apply): on when the service-account key
