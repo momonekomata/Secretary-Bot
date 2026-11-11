@@ -108,3 +108,65 @@ describe('Thai Food Composition Database files', () => {
     expect(echo.requests).toHaveLength(1);
   });
 });
+
+/** A ThaiFCD food web page: labels as text, one "Per 100 g" column (made-up food and values). */
+const PAGE =
+  '<html><body><form id="form1"><div><h3>Food Search Result</h3>' +
+  '<div><span>Food Code:</span> <span>F9999</span></div><div><span>Thai name:</span> <span>หมูทดสอบ, ต้ม</span></div>' +
+  '<div><span>English name:</span> <span>Pork, test, boiled</span></div><div><span>Scientific name:</span> <span>Sus scrofa domestica</span></div>' +
+  '<a href="https://inmu.mahidol.ac.th/thaifcd/foodsearch/food_name_result_std_excel/?dbcode=STD&amp;food_id=9999&amp;mode=EXCEL">Save as Excel</a>' +
+  '<table><tr><th>Nutrients (สารอาหาร): Search nutrient by</th><th>Unit (หน่วย)</th><th>Per 100 g edible portion</th><th>Deriv.By</th><th>n</th></tr>' +
+  '<tr><td>Energy, by calculation</td><td>kcal</td><td>276</td><td></td><td>-</td></tr>' +
+  '<tr><td>Protein, total</td><td>g</td><td>25.80</td><td></td><td>-</td></tr>' +
+  '<tr><td>Fat, total</td><td>g</td><td>18.80</td><td></td><td>-</td></tr>' +
+  '<tr><td>Carbohydrate, available</td><td>g</td><td>0.90</td><td></td><td>-</td></tr>' +
+  '</table><table><tr><td>Name</td><td>Domain</td></tr><tr><td>_ga</td><td>google.com</td></tr></table></div></form></body></html>';
+
+describe('ThaiFCD foods by link or number', () => {
+  const LINK = 'https://inmu.mahidol.ac.th/thaifcd//foodsearch/food_name/?dbcode=STD&food_group_id=76&id=9999&name=Pork,%20test,%20boiled';
+
+  it('reads the web page itself (labels as text, per 100 g only)', async () => {
+    const { thaiFcdRef } = await import('../thaifcd');
+    expect(parseThaiFcd(PAGE)).toEqual({
+      code: 'F9999',
+      nameTh: 'หมูทดสอบ, ต้ม',
+      nameEn: 'Pork, test, boiled',
+      manufacturer: '',
+      per100: { kcal: 276, protein: 25.8, fat: 18.8, carbs: 0.9, fibre: NaN, sugar: NaN, sodiumMg: NaN },
+    });
+    expect(thaiFcdRef(`look: ${LINK}`)).toEqual({ dbcode: 'STD', id: '9999', url: LINK });
+    expect(thaiFcdRef('https://inmu.mahidol.ac.th/thaifcd/foodsearch/food_name_result_std_excel/?dbcode=STD&amp;food_id=148&amp;mode=EXCEL')).toMatchObject({ dbcode: 'STD', id: '148' });
+    expect(thaiFcdRef('https://example.com/?id=1')).toBeNull();
+  });
+
+  it('fetches the Excel export by number, else the linked page', async () => {
+    const { fetchThaiFcd } = await import('../thaifcd');
+    const asked: string[] = [];
+    const exportWorks = (async (u: string) => (asked.push(u), new Response(CRACKER))) as typeof fetch;
+    expect((await fetchThaiFcd({ dbcode: 'STD', id: '9999', url: LINK }, exportWorks))!.code).toBe('Z999901');
+    expect(asked).toEqual(['https://inmu.mahidol.ac.th/thaifcd/foodsearch/food_name_result_std_excel/?dbcode=STD&food_id=9999&mode=EXCEL']);
+    const onlyPage = (async (u: string) => (asked.push(u), u.includes('_excel') ? new Response('', { status: 500 }) : new Response(PAGE))) as typeof fetch;
+    expect((await fetchThaiFcd({ dbcode: 'STD', id: '9999', url: LINK }, onlyPage))!.code).toBe('F9999');
+    expect(asked.at(-1)).toBe(LINK);
+    expect(await fetchThaiFcd({ dbcode: 'STD', id: '1' }, (async () => new Response('<html>no</html>')) as typeof fetch)).toBeNull();
+  });
+
+  it('a link pasted in chat is saved without the AI; the AI can fetch by link too', async () => {
+    const { vi } = await import('vitest');
+    vi.stubGlobal('fetch', async (u: string) => (String(u).includes('_excel') ? new Response('', { status: 404 }) : new Response(PAGE)));
+    const store = new Store(null);
+    const cfg = testConfig();
+    const echo = echoProvider('ok');
+    const agent = new Agent(cfg, store, { gemini: echo.provider }, null, () => NOW);
+    const s = new Secretary(cfg, store, agent, new Briefings(cfg, store, agent, () => NOW), null, async () => '');
+    const r = await s.handle({ platform: 'telegram', chatKey: 'telegram:1', userId: '1', text: LINK });
+    expect(r!.text).toMatch(/^🥫 Saved from the Thai Food Composition Database: #\d+ หมูทดสอบ, ต้ม · 100 g: 276 kcal · P 25.8 g · C 0.9 g · F 18.8 g \(code F9999\)/);
+    expect(echo.requests).toHaveLength(0);
+
+    const { runTool } = await import('../tools');
+    const tool = await runTool('thaifcd_food', { link: 'STD 9999' }, { chatKey: 'c', store, cfg, google: null, now: () => NOW });
+    expect(tool.content).toMatch(/^Thai Food Composition Database \(code F9999\), saved to the personal food database:\n#\d+ หมูทดสอบ, ต้ม/);
+    expect(store.foodDb('c')).toHaveLength(1);
+    vi.unstubAllGlobals();
+  });
+});

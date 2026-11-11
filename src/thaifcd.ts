@@ -58,14 +58,34 @@ const value = (s: string | undefined) => {
  */
 export function parseThaiFcd(html: string): ThaiFcdFood | null {
   const rows = tableRows(html);
-  const label = (name: string) => rows.find((r) => r.length === 1 && r[0].toLowerCase().startsWith(name.toLowerCase()))?.[0].replace(/^[^:]*:\s*/, '').trim() ?? '';
+  // Labels are table rows in the downloads ("Food Code: Z060002"), plain text on the web page.
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, '\n')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
+  const label = (name: string) => {
+    const row = rows.find((r) => r.length === 1 && r[0].toLowerCase().startsWith(name.toLowerCase()))?.[0];
+    if (row !== undefined) return row.replace(/^[^:]*:\s*/, '').trim();
+    const m = new RegExp(`${name.replace(/[()]/g, '\\$&')}[^:\\n]*:\\s*\\n*\\s*([^\\n]+)`, 'i').exec(text);
+    return m && !/^[A-Z][a-z]+ name:|^Scientific|^Save as/.test(m[1].trim()) ? m[1].trim() : '';
+  };
   const code = label('Food Code');
-  const header = rows.findIndex((r) => /^Nutrients/i.test(r[0] ?? '') && r.length >= 5);
-  if (!code || header < 0) return null;
-  const table = rows.slice(header + 1).filter((r) => r.length >= 5);
-  const find = (...names: string[]) => names.map((n) => table.find((r) => r[0].toLowerCase() === n.toLowerCase())).find((r) => r && (Number.isFinite(value(r[3])) || Number.isFinite(value(r[4]))));
-  const pick = (col: 3 | 4): ThaiFcdNutrients => {
-    const v = (...names: string[]) => value(find(...names)?.[col]);
+  // Columns are found by their headings: branded products have "per 1 Serving" and "per 100 g"; other foods only "per 100 g".
+  const head = rows.find((r) => /^Nutrients/i.test(r[0] ?? '') && r.length >= 3);
+  if (!code || !head) return null;
+  const per100Col = head.findIndex((c) => /per 100 g/i.test(c));
+  const servingCol = head.findIndex((c) => /per 1 Serving/i.test(c));
+  if (per100Col < 0) return null;
+  const table = rows.slice(rows.indexOf(head) + 1).filter((r) => r.length > per100Col);
+  const pick = (col: number): ThaiFcdNutrients => {
+    const v = (...names: string[]) => {
+      for (const n of names) {
+        const x = value(table.find((r) => r[0].toLowerCase() === n.toLowerCase())?.[col]);
+        if (Number.isFinite(x)) return x;
+      }
+      return NaN;
+    };
     return {
       kcal: v('Energy, by calculation', 'Total energy - by calculation'),
       protein: v('Protein, total'),
@@ -76,9 +96,9 @@ export function parseThaiFcd(html: string): ThaiFcdFood | null {
       sodiumMg: v('Sodium'),
     };
   };
-  const per100 = pick(4);
-  const perServing = pick(3);
-  if (!Number.isFinite(per100.kcal) && !Number.isFinite(perServing.kcal)) return null;
+  const per100 = pick(per100Col);
+  const perServing = servingCol >= 0 ? pick(servingCol) : null;
+  if (!Number.isFinite(per100.kcal) && !(perServing && Number.isFinite(perServing.kcal))) return null;
   const servingG = value(label('Serving Size'));
   return {
     code,
@@ -86,9 +106,39 @@ export function parseThaiFcd(html: string): ThaiFcdFood | null {
     nameEn: label('English name'),
     manufacturer: label('Manufacturer'),
     ...(Number.isFinite(servingG) && servingG > 0 ? { servingG, servingUnit: label('Unit per serving') } : {}),
-    ...(Number.isFinite(perServing.kcal) ? { perServing } : {}),
+    ...(perServing && Number.isFinite(perServing.kcal) ? { perServing } : {}),
     per100,
   };
+}
+
+/** A ThaiFCD food page link ("…/thaifcd/…food_name/?dbcode=STD&…&id=952…") → its database and food number. */
+export function thaiFcdRef(text: string): { dbcode: string; id: string; url?: string } | null {
+  const url = /https?:\/\/(?:www\.)?inmu\.mahidol\.ac\.th\/thaifcd\/\S+/i.exec(text)?.[0];
+  if (!url) return null;
+  const q = url.replace(/&amp;/g, '&');
+  const id = /[?&](?:food_)?id=(\d+)/.exec(q)?.[1];
+  if (!id) return null;
+  return { dbcode: /[?&]dbcode=(\w+)/.exec(q)?.[1] ?? 'STD', id, url: q };
+}
+
+const FCD = 'https://inmu.mahidol.ac.th/thaifcd/foodsearch';
+
+/**
+ * Fetches a food by its number: the site's "Save as Excel" export, or else the food page itself (same table).
+ * Returns null when neither has the food's values.
+ */
+export async function fetchThaiFcd(ref: { dbcode: string; id: string; url?: string }, fetchFn: typeof fetch = fetch): Promise<ThaiFcdFood | null> {
+  const db = encodeURIComponent(ref.dbcode);
+  const id = encodeURIComponent(ref.id);
+  // The export first; then the page the user linked (with its own parameters), else the page by number.
+  const pages = [`${FCD}/food_name_result_std_excel/?dbcode=${db}&food_id=${id}&mode=EXCEL`, ref.url ?? `${FCD}/food_name/?dbcode=${db}&id=${id}`];
+  for (const url of pages) {
+    const res = await fetchFn(url, { headers: { 'User-Agent': 'SecretaryBot/1.0 (personal Telegram bot)' } });
+    if (!res.ok) continue;
+    const food = parseThaiFcd(await res.text());
+    if (food) return food;
+  }
+  return null;
 }
 
 /** True for a ThaiFCD food-group list (names and codes only, no nutrients). */
@@ -116,18 +166,28 @@ export function saveThaiFcd(store: Store, chatKey: string, f: ThaiFcdFood): Pers
   });
 }
 
+/** Reply for a ThaiFCD link the user sent: fetches the food and saves it. Null when the text has no food link. */
+export async function importThaiFcdLink(store: Store, chatKey: string, text: string, fetchFn: typeof fetch = fetch): Promise<string | null> {
+  const ref = thaiFcdRef(text);
+  if (!ref) return null;
+  const food = await fetchThaiFcd(ref, fetchFn);
+  if (!food) return t(`I couldn't read food ${ref.id} from the Thai Food Composition Database.`, `อ่านข้อมูลอาหารหมายเลข ${ref.id} จากฐานข้อมูลคุณค่าทางโภชนาการอาหารไทยไม่ได้`);
+  return savedReply(saveThaiFcd(store, chatKey, food), food.code);
+}
+
+function savedReply(saved: PersonalFood, code: string): string {
+  return t(
+    `🥫 Saved from the Thai Food Composition Database: #${saved.id} ${saved.name} · ${saved.serving}: ${saved.kcal} kcal · P ${saved.protein} g · C ${saved.carbs} g · F ${saved.fat} g (code ${code}). See /fooddb.`,
+    `🥫 บันทึกจากฐานข้อมูลคุณค่าทางโภชนาการอาหารไทยแล้ว: #${saved.id} ${saved.name} · ${saved.serving}: ${saved.kcal} kcal · โปรตีน ${saved.protein} g · คาร์บ ${saved.carbs} g · ไขมัน ${saved.fat} g (รหัส ${code}) ดูได้ที่ /fooddb`,
+  );
+}
+
 /** Reply for a file the user sent: imports a ThaiFCD food, or explains a list file. Null when it isn't ThaiFCD. */
 export function importThaiFcdFile(store: Store, chatKey: string, data: Buffer): string | null {
   const html = data.toString('utf8');
   if (!/thaifcd|Food Code/i.test(html)) return null;
   const food = parseThaiFcd(html);
-  if (food) {
-    const saved = saveThaiFcd(store, chatKey, food);
-    return t(
-      `🥫 Saved from the Thai Food Composition Database: #${saved.id} ${saved.name} · ${saved.serving}: ${saved.kcal} kcal · P ${saved.protein} g · C ${saved.carbs} g · F ${saved.fat} g (code ${food.code}). See /fooddb.`,
-      `🥫 บันทึกจากฐานข้อมูลคุณค่าทางโภชนาการอาหารไทยแล้ว: #${saved.id} ${saved.name} · ${saved.serving}: ${saved.kcal} kcal · โปรตีน ${saved.protein} g · คาร์บ ${saved.carbs} g · ไขมัน ${saved.fat} g (รหัส ${food.code}) ดูได้ที่ /fooddb`,
-    );
-  }
+  if (food) return savedReply(saveThaiFcd(store, chatKey, food), food.code);
   if (isThaiFcdList(html)) {
     return t(
       "📋 This ThaiFCD file is a list of foods (names and codes) without nutrient values. Open a food on the site and send me its download; I'll save it to your food database.",
