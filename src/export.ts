@@ -90,6 +90,7 @@ export function buildExport(store: Store, db: HealthDb, chatKey: string, timeZon
   const days = db.range('0000-01-01', '9999-12-31');
   const memories = store.memories(chatKey);
   const money = store.money(chatKey);
+  const foodDb = store.foodDb(chatKey);
   const usage = store.usage();
   const clock = (iso: string) => localClock(new Date(iso), timeZone);
 
@@ -136,6 +137,13 @@ export function buildExport(store: Store, db: HealthDb, chatKey: string, timeZon
       data: csv(['date', 'meal', 'food', 'kcal'], days.flatMap(([day, r]) => (r.extra?.food?.items ?? []).map((i) => [day, i.meal, i.name, i.kcal]))),
     },
     {
+      name: 'food_database.csv',
+      data: csv(
+        ['id', 'barcode', 'name', 'brand', 'serving', 'kcal', 'protein_g', 'carbs_g', 'fat_g', 'source', 'times_logged', 'updated'],
+        foodDb.map((f) => [f.id, f.barcode, f.name, f.brand, f.serving, f.kcal, f.protein, f.carbs, f.fat, f.source, f.timesLogged, f.updatedAt.slice(0, 10)]),
+      ),
+    },
+    {
       name: 'money.csv',
       data: csv(
         ['id', 'date', 'time', 'direction', 'category', 'amount', 'currency', 'payee', 'account', 'reference', 'note', 'copay_discount', 'source'],
@@ -169,13 +177,13 @@ export function buildExport(store: Store, db: HealthDb, chatKey: string, timeZon
     data: zip(files, now),
     summary: t(
       `💾 Your data as of ${formatTime(now, timeZone)}:\n` +
-        `• food_diary.csv: ${food.length} entries\n• weight.csv: ${weights.length} weigh-ins\n• money.csv: ${money.length} transactions\n` +
+        `• food_diary.csv: ${food.length} entries\n• food_database.csv: ${foodDb.length} foods\n• weight.csv: ${weights.length} weigh-ins\n• money.csv: ${money.length} transactions\n` +
         `• health_daily.csv: ${days.length} days (sleep, steps, calories, heart rate, weight…)\n` +
         `• workouts.csv, samsung_food_log.csv, memories.csv (${memories.length}), ai_usage.csv\n` +
         '• profile_and_settings.json: body profile, budget, personality, preferences, to-dos, reminders\n' +
         'CSV files open in Excel, Google Sheets or Numbers.',
       `💾 ข้อมูลของคุณ ณ ${formatTime(now, timeZone)}:\n` +
-        `• food_diary.csv: ${food.length} รายการ\n• weight.csv: ชั่งน้ำหนัก ${weights.length} ครั้ง\n• money.csv: ${money.length} รายการ\n` +
+        `• food_diary.csv: ${food.length} รายการ\n• food_database.csv: อาหาร ${foodDb.length} รายการ\n• weight.csv: ชั่งน้ำหนัก ${weights.length} ครั้ง\n• money.csv: ${money.length} รายการ\n` +
         `• health_daily.csv: ${days.length} วัน (การนอน ก้าวเดิน แคลอรี่ อัตราการเต้นของหัวใจ น้ำหนัก…)\n` +
         `• workouts.csv, samsung_food_log.csv, memories.csv (${memories.length}), ai_usage.csv\n` +
         '• profile_and_settings.json: ข้อมูลร่างกาย งบประมาณ บุคลิก สิ่งที่ตั้งค่าไว้ สิ่งที่ต้องทำ และการเตือน\n' +

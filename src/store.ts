@@ -78,6 +78,23 @@ export interface Budget {
   startDay?: number;
 }
 
+/** A food in the user's own database (by barcode, from a nutrition label, or corrected by the user). */
+export interface PersonalFood {
+  id: number;
+  barcode?: string;
+  name: string;
+  brand?: string;
+  /** What the numbers are for, e.g. "1 pack (60 g)". */
+  serving: string;
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  source: 'openfoodfacts' | 'label' | 'user' | 'estimate';
+  updatedAt: string;
+  timesLogged: number;
+}
+
 export interface BodyProfile {
   sex?: 'male' | 'female';
   /** Birth year, so the age stays right. */
@@ -165,6 +182,8 @@ interface Data {
   /** Last local day (YYYY-MM-DD) each scheduled job or one-a-day alert ran. */
   ranOn: Record<string, string>;
   money: Record<string, Txn[]>;
+  /** The user's own food database, per chat. */
+  foodDb: Record<string, PersonalFood[]>;
   budgets: Record<string, Budget>;
   /** Gmail message ids already read for transactions. */
   moneySeen: string[];
@@ -185,6 +204,7 @@ const empty = (): Data => ({
   reviews: {},
   ranOn: {},
   money: {},
+  foodDb: {},
   budgets: {},
   moneySeen: [],
 });
@@ -424,6 +444,44 @@ export class Store {
   setReview(chatKey: string, s: ReviewSession | null) {
     if (s) this.data.reviews[chatKey] = s;
     else delete this.data.reviews[chatKey];
+    this.save();
+  }
+
+  // --- personal food database ---
+
+  foodDb(chatKey: string): PersonalFood[] {
+    return this.data.foodDb[chatKey] ?? [];
+  }
+
+  /**
+   * Adds a food, or updates the one with the same barcode (or, without a barcode, the same name and brand).
+   * Keeps its id and how often it was logged.
+   */
+  saveFood(chatKey: string, f: Omit<PersonalFood, 'id' | 'updatedAt' | 'timesLogged'>): PersonalFood {
+    const list = this.foodDb(chatKey);
+    const key = (x: { name: string; brand?: string }) => `${x.name}|${x.brand ?? ''}`.trim().toLowerCase();
+    const old = list.find((x) => (f.barcode ? x.barcode === f.barcode : !x.barcode && key(x) === key(f)));
+    const clean = Object.fromEntries(Object.entries(f).filter(([, v]) => v !== undefined && v !== '')) as typeof f;
+    const item: PersonalFood = { id: old?.id ?? this.data.nextId++, timesLogged: old?.timesLogged ?? 0, ...clean, updatedAt: new Date().toISOString() };
+    this.data.foodDb[chatKey] = [...list.filter((x) => x !== old), item];
+    this.save();
+    return item;
+  }
+
+  removeFoodDbItem(chatKey: string, id: number): PersonalFood | null {
+    const f = this.foodDb(chatKey).find((x) => x.id === id) ?? null;
+    if (f) {
+      this.data.foodDb[chatKey] = this.foodDb(chatKey).filter((x) => x.id !== id);
+      this.save();
+    }
+    return f;
+  }
+
+  /** Counts one more meal logged with this food (most-logged foods come first in /fooddb). */
+  noteFoodLogged(chatKey: string, id: number) {
+    const f = this.foodDb(chatKey).find((x) => x.id === id);
+    if (!f) return;
+    f.timesLogged++;
     this.save();
   }
 

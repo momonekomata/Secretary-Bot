@@ -19,7 +19,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
     "@google/genai": "^3.0.0",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "zxing-wasm": "^3.1.6"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

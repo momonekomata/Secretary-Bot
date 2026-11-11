@@ -15,6 +15,7 @@ import { localDay } from './time';
 import { weatherText } from './tools';
 import { formatDay as formatWatchDay } from './healthsync';
 import { buildExport } from './export';
+import { foodLine } from './fooddb';
 import { budgetAlerts, CATEGORY_KEYS, findCategory, report, scanEmail, scanSummary, txnLine } from './money';
 import { formatReport, healthImport, importFromDrive } from './samsungexport';
 import type { LimitScope, Store } from './store';
@@ -793,6 +794,27 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
       }
 
       // --- food and body ---
+      case '/fooddb': {
+        const [sub = '', ...rest] = arg.split(/\s+/).filter(Boolean);
+        const all = store.foodDb(chatKey);
+        if (/^(remove|delete|ลบ)$/i.test(sub)) {
+          const f = store.removeFoodDbItem(chatKey, Number(String(rest[0] ?? '').replace('#', '')));
+          return { text: f ? t(`🗑️ Removed from your food database: ${f.name}`, `🗑️ ลบออกจากฐานข้อมูลอาหารแล้ว: ${f.name}`) : t(`No food #${rest[0] ?? ''}. See /fooddb.`, `ไม่มีอาหาร #${rest[0] ?? ''} ดูได้ที่ /fooddb`) };
+        }
+        const words = arg.toLowerCase().split(/\s+/).filter(Boolean);
+        const hits = (words.length ? all.filter((f) => words.every((w) => `${f.name} ${f.brand ?? ''} ${f.barcode ?? ''}`.toLowerCase().includes(w))) : all)
+          .sort((x, y) => y.timesLogged - x.timesLogged || y.updatedAt.localeCompare(x.updatedAt))
+          .slice(0, 25);
+        const how = t(
+          'Send a photo of a product with its barcode (or its nutrition label) and I look it up, log it and save it here. Fix a value by telling me, e.g. "#12 is 220 kcal per pack". /fooddb <words> searches · /fooddb remove <#>',
+          'ส่งรูปสินค้าที่เห็นบาร์โค้ด (หรือฉลากโภชนาการ) แล้วฉันจะค้นหา บันทึก และเก็บไว้ที่นี่ แก้ค่าได้โดยบอกฉัน เช่น "#12 ห่อละ 220 kcal" · /fooddb <คำค้น> เพื่อค้นหา · /fooddb remove <#> เพื่อลบ',
+        );
+        if (!all.length) return { text: `🥫 ${t('Your food database is empty.', 'ฐานข้อมูลอาหารของคุณยังว่างอยู่')}\n${how}` };
+        if (!hits.length) return { text: t(`🥫 Nothing matches "${arg}".`, `🥫 ไม่พบ "${arg}"`) };
+        return {
+          text: `${t(`🥫 Your food database (${all.length})${words.length ? `: "${arg}"` : ', most logged first'}`, `🥫 ฐานข้อมูลอาหารของคุณ (${all.length})${words.length ? `: "${arg}"` : ' เรียงตามที่บันทึกบ่อย'}`)}\n${hits.map(foodLine).join('\n')}\n\n${how}`,
+        };
+      }
       case '/food': {
         const today = localDay(now, cfg.timezone);
         const [sub, id] = arg.split(/\s+/);

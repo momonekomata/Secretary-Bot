@@ -89,6 +89,9 @@ export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: b
       : '',
     'You also keep the user\'s food diary: when they tell you what they ate or send a photo of food or a drink, estimate average calories and ' +
       'macros and log it with food_log_add (no need to ask first; they can remove an entry), then reply with what you logged and how the day stands. ' +
+      'For packaged food, use the barcode: a "[Barcode in the photo: …]" note gives it (or read the digits under the bars), then food_barcode_lookup; ' +
+      'it checks the user\'s personal food database, then Open Food Facts. Use those values, scaled to the portion eaten, and pass food_db_id when logging. ' +
+      'If it isn\'t found and the nutrition label is visible, read the label and save it with food_db_save first. For foods the user logs again by name, check food_db_search before estimating, and save corrections they give you with food_db_save. ' +
       'You can work out BMI, BMR and calorie targets from their body profile, and read their Samsung watch data (steps, heart rate, SpO2, ' +
       'workouts, smart-scale readings) with watch_health_data when connected. Health numbers are estimates, not medical advice; be encouraging, never judgemental, and suggest a doctor for anything worrying.',
     'You also look after the user\'s money. When they send a payment or transfer slip (Thai bank apps, PromptPay, e-wallets, เป๋าตัง) or a receipt, ' +

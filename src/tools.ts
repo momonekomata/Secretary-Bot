@@ -5,6 +5,8 @@ import { formatPlaces, TRAVEL_MODES, type Maps, type TravelMode } from './maps';
 import { ACTIVITY, bodyNumbers, formatBody, formatFoodDay, MEALS } from './health';
 import { history, type HealthData } from './healthdb';
 import { formatDay as formatWatchDay } from './healthsync';
+import { barcodeDigits } from './barcode';
+import { foodLine, lookupBarcode } from './fooddb';
 import { budgetAlerts, CATEGORY_KEYS, findCategory, logTxn, report, scanEmail, scanSummary, txnLine } from './money';
 import { fetchNews, formatNews } from './news';
 import type { City, Store } from './store';
@@ -95,9 +97,39 @@ const HEALTH: ToolSpec[] = [
           protein_g: num('Protein in grams.'),
           carbs_g: num('Carbohydrates in grams.'),
           fat_g: num('Fat in grams.'),
+          food_db_id: int("The item's # in the user's personal food database when it came from there (barcode or saved food), else 0."),
         }),
       },
     }),
+  },
+  {
+    name: 'food_barcode_lookup',
+    description:
+      "Look up a packaged food by its barcode: the user's personal food database first, then Open Food Facts (found products are saved to the database). " +
+      'Use the digits from a "[Barcode in the photo: …]" note, or read them under the bars. Returns calories and macros per serving.',
+    parameters: obj({ barcode: str('The barcode digits, e.g. "8850999220017".') }),
+  },
+  {
+    name: 'food_db_save',
+    description:
+      "Save or correct a food in the user's personal food database: from a nutrition label photo (ฉลากโภชนาการ / 栄養成分表示), from what the user says, or your estimate for a food they eat often. " +
+      'Same barcode (or same name and brand) updates the existing entry.',
+    parameters: obj({
+      barcode: str('Barcode digits, or "".'),
+      name: str('Product or food name, as on the pack.'),
+      brand: str('Brand, or "".'),
+      serving: str('What the numbers are for, e.g. "1 pack (60 g)", "1 bottle (350 ml)".'),
+      kcal: num('Calories per serving.'),
+      protein_g: num('Protein per serving, g.'),
+      carbs_g: num('Carbohydrates per serving, g.'),
+      fat_g: num('Fat per serving, g.'),
+      source: oneOf(['label', 'user', 'estimate'], '"label" = read from a nutrition label, "user" = the user told you, "estimate" = your estimate.'),
+    }),
+  },
+  {
+    name: 'food_db_search',
+    description: "Search the user's personal food database by name or brand (e.g. their usual protein shake), before estimating a food they have logged before.",
+    parameters: obj({ query: str('Words to look for, or "" for the most-logged foods.') }),
   },
   {
     name: 'food_log_day',
@@ -466,12 +498,49 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
         return ok(formatNews(s('topic') || 'Top stories', await fetchNews(s('topic') || null, ctx.cfg.news)));
       case 'get_weather':
         return ok(await weatherText(ctx.store, ctx.cfg.weather.defaultCity, s('city'), Number(a.days) || 1));
+      case 'food_barcode_lookup': {
+        const r = await lookupBarcode(ctx.store, ctx.chatKey, s('barcode'));
+        if (!r.food) {
+          return r.invalid
+            ? fail(`"${s('barcode')}" is not a valid barcode (check digit wrong or too short). Read the digits again, or ask the user to type them.`)
+            : ok(`Barcode ${s('barcode')} isn't in the personal database or Open Food Facts. If the photo shows the nutrition label, read it and save it with food_db_save (source "label"); otherwise ask the user for a label photo, or estimate.`);
+        }
+        const where = r.found === 'mine' ? "from the user's personal food database" : 'from Open Food Facts (now saved to the personal database)';
+        return ok(`Found ${where}:\n${foodLine(r.food)}\nValues are per ${r.food.serving}. Scale them to what the user ate (ask if unclear), then log with food_log_add using food_db_id ${r.food.id}.`);
+      }
+      case 'food_db_save': {
+        const n = (k: string) => Math.max(0, Math.round((Number(a[k]) || 0) * 10) / 10);
+        if (!s('name')) return fail('A name is needed.');
+        const barcode = barcodeDigits(s('barcode'));
+        const saved = ctx.store.saveFood(ctx.chatKey, {
+          ...(barcode ? { barcode } : {}),
+          name: s('name').slice(0, 120),
+          brand: s('brand').slice(0, 60) || undefined,
+          serving: s('serving').slice(0, 60) || '1 serving',
+          kcal: Math.round(n('kcal')),
+          protein: n('protein_g'),
+          carbs: n('carbs_g'),
+          fat: n('fat_g'),
+          source: (['label', 'user', 'estimate'].includes(s('source')) ? s('source') : 'user') as 'label' | 'user' | 'estimate',
+        });
+        return ok(`Saved to the personal food database: ${foodLine(saved)}`);
+      }
+      case 'food_db_search': {
+        const q = s('query').toLowerCase();
+        const words = q.split(/\s+/).filter(Boolean);
+        const all = ctx.store.foodDb(ctx.chatKey);
+        const hits = (words.length ? all.filter((f) => words.every((w) => `${f.name} ${f.brand ?? ''} ${f.barcode ?? ''}`.toLowerCase().includes(w))) : all)
+          .sort((x, y) => y.timesLogged - x.timesLogged)
+          .slice(0, 15);
+        return ok(hits.length ? hits.map(foodLine).join('\n') : `Nothing in the personal food database${q ? ` for "${s('query')}"` : ''} yet.`);
+      }
       case 'food_log_add': {
         const meal = ((MEALS as readonly string[]).includes(s('meal')) ? s('meal') : 'snack') as (typeof MEALS)[number];
         const when = s('eaten_at') && !Number.isNaN(Date.parse(s('eaten_at'))) ? new Date(s('eaten_at')) : now;
         const items = Array.isArray(a.items) ? (a.items as Record<string, unknown>[]) : [];
         if (!items.length) return fail('No food items given.');
         const n = (v: unknown) => Math.max(0, Math.round(Number(v) || 0));
+        for (const it of items) if (Number(it.food_db_id) > 0) ctx.store.noteFoodLogged(ctx.chatKey, Number(it.food_db_id));
         const added = items.map((it) =>
           ctx.store.addFood(ctx.chatKey, {
             ts: when.toISOString(),

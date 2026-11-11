@@ -117,6 +117,7 @@ It remembers the recent conversation. `/reset` forgets the conversation but keep
 | Command | What it does |
 |---|---|
 | `/food` | Today's food and calories (`/food yesterday`, `/food 2026-11-01`) |
+| `/fooddb` | Your personal food database (barcodes, labels, your corrections); `/fooddb <words>` searches, `/fooddb remove <#>` |
 | `/food remove <id>` | Delete a food entry |
 | `/bmi` | BMI, BMR, daily burn and calorie target |
 | `/profile` | Your body profile (and how to change it) |
@@ -299,6 +300,13 @@ Thai words work in commands too, e.g. `/budget set อาหาร 6000`.
 ## 10. Food diary and body
 
 - **Log food** by telling it ("lunch was khao man gai and a Thai iced tea") or sending a photo. It estimates average calories and macros (Thai portions where relevant) and logs without asking.
+- **Packaged food: show the barcode.** Send a photo where the barcode is visible. The bot reads the barcode on the NAS itself (no AI, works offline), then looks the product up:
+  1. your own **food database** first;
+  2. **Open Food Facts** (a free, open product database, many Thai and Japanese products); anything found is saved to your database;
+  3. not found: send a photo of the **nutrition label** (ฉลากโภชนาการ / 栄養成分表示) and it reads and saves it, or it estimates.
+
+  Values are scaled to what you ate (it asks if the portion isn't clear). Correct anything by telling it ("#12 is 220 kcal per pack"); the correction is kept. Foods you log by name ("my usual protein shake") are looked up in your database too.
+- `/fooddb` lists your foods, most-logged first; `/export` includes them as `food_database.csv`.
 - `/food` shows today against your calorie target. `/food yesterday` and `/food 2026-11-01` show other days; `/food remove 12` deletes an entry.
 - **Body profile:** tell it your sex, birth year, height, weight, activity level and goal (lose / maintain / gain). `/profile` shows it.
 - `/bmi` gives:
