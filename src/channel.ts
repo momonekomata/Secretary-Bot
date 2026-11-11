@@ -1,5 +1,5 @@
 import { BudgetExceeded, type Agent, type IncomingImage } from './agent';
-import { importThaiFcdFile } from './thaifcd';
+import { importThaiFcdFile, importThaiFcdLink } from './thaifcd';
 import { findBarcodes } from './barcode';
 import type { Usage } from './models';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -206,6 +206,10 @@ export class Secretary {
     if (m.audio) {
       const v = await this.voice(m);
       return { text: v.text, ...(v.reply && mode !== 'off' ? { speak: v.reply } : {}) };
+    }
+    if (!m.file && !m.images?.length && /^\s*\S*inmu\.mahidol\.ac\.th\/thaifcd\S*\s*$/i.test(m.text)) {
+      const imported = await importThaiFcdLink(this.store, m.chatKey, m.text);
+      if (imported) return { text: imported };
     }
     if (m.file && /\.(xls|html?)$/i.test(m.file.name)) {
       const imported = importThaiFcdFile(this.store, m.chatKey, m.file.data);

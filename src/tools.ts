@@ -8,6 +8,7 @@ import { formatDay as formatWatchDay } from './healthsync';
 import { barcodeDigits } from './barcode';
 import { foodLine, lookupBarcode } from './fooddb';
 import { usdaLine, usdaSearch } from './nutrition';
+import { fetchThaiFcd, saveThaiFcd, thaiFcdRef } from './thaifcd';
 import { budgetAlerts, CATEGORY_KEYS, findCategory, logTxn, report, scanEmail, scanSummary, txnLine } from './money';
 import { fetchNews, formatNews } from './news';
 import type { City, Store } from './store';
@@ -129,6 +130,13 @@ const HEALTH: ToolSpec[] = [
         '"label" = read from a nutrition label, "user" = the user told you, "thaifcd" = Thai Food Composition Database (INMU), "usda" = USDA FoodData Central, "estimate" = your estimate.',
       ),
     }),
+  },
+  {
+    name: 'thaifcd_food',
+    description:
+      'Get a food from the Thai Food Composition Database (INMU, Mahidol) by its page link or number, read its exact values and save it to the personal food database. ' +
+      'Find the food with web search (its page is inmu.mahidol.ac.th/thaifcd/…/food_name/?dbcode=STD&…&id=NUMBER), then pass that link.',
+    parameters: obj({ link: str('The ThaiFCD food page link (or "STD 952": database code and food number).') }),
   },
   {
     name: 'usda_food_search',
@@ -518,6 +526,15 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
         }
         const where = r.found === 'mine' ? "from the user's personal food database" : 'from Open Food Facts (now saved to the personal database)';
         return ok(`Found ${where}:\n${foodLine(r.food)}\nValues are per ${r.food.serving}. Scale them to what the user ate (ask if unclear), then log with food_log_add using food_db_id ${r.food.id}.`);
+      }
+      case 'thaifcd_food': {
+        const link = s('link');
+        const ref = thaiFcdRef(link) ?? (/^(\w+)\s+(\d+)$/.exec(link) ? { dbcode: link.split(/\s+/)[0], id: link.split(/\s+/)[1] } : /^\d+$/.test(link) ? { dbcode: 'STD', id: link } : null);
+        if (!ref) return fail('Give the ThaiFCD food page link (it has "id=" and a number in it).');
+        const food = await fetchThaiFcd(ref);
+        if (!food) return fail(`Food ${ref.id} could not be read from the Thai Food Composition Database.`);
+        const saved = saveThaiFcd(ctx.store, ctx.chatKey, food);
+        return ok(`Thai Food Composition Database (code ${food.code}), saved to the personal food database:\n${foodLine(saved)}\nValues are per ${saved.serving}. Scale to the portion eaten and log with food_log_add using food_db_id ${saved.id}.`);
       }
       case 'usda_food_search': {
         if (!s('query')) return fail('What food?');
