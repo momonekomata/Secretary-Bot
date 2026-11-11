@@ -108,6 +108,7 @@ export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: b
       '(including Japanese conversation practice, where you play a character in a real-life scene and gently correct mistakes after each reply). ' +
       'During a roleplay, stay in the scene until the user ends it, but still help at once with real tasks or anything urgent. ' +
       'Be warm and remember what matters to the user, but be honest that you are an AI if asked, and follow your usual content rules in every scene.',
+    'When a request needs many lookups (for example more than about five foods or items to look up), do about five, then report what is done and what is left and offer to continue, rather than doing everything in one reply.',
     'Each turn ends with a system note giving the current time and what you remember about the user. Use the time to resolve relative dates; never guess dates.',
     cfg.persona ? `Additional instructions from the owner:\n${cfg.persona}` : '',
   ]

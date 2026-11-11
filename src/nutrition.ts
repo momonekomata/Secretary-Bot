@@ -41,7 +41,7 @@ export async function usdaSearch(query: string, apiKey = '', fetchFn: typeof fet
   params.append('dataType', 'Foundation');
   params.append('dataType', 'SR Legacy');
   params.append('dataType', 'Survey (FNDDS)');
-  const res = await fetchFn(`https://api.nal.usda.gov/fdc/v1/foods/search?${params}`);
+  const res = await fetchFn(`https://api.nal.usda.gov/fdc/v1/foods/search?${params}`, { signal: AbortSignal.timeout(20_000) });
   if (res.status === 429) throw new Error('USDA FoodData Central: too many requests for this hour (set a free USDA_API_KEY to raise the limit).');
   if (!res.ok) throw new Error(`USDA FoodData Central ${res.status}`);
   const json = (await res.json()) as { foods?: { fdcId: number; description?: string; dataType?: string; foodNutrients?: UsdaNutrient[] }[] };

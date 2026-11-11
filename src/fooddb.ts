@@ -31,6 +31,7 @@ export async function openFoodFacts(barcode: string, fetchFn: typeof fetch = fet
   for (const code of codes) {
     const res = await fetchFn(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${OFF_FIELDS}`, {
       headers: { 'User-Agent': 'SecretaryBot/1.0 (personal Telegram bot)' },
+      signal: AbortSignal.timeout(20_000),
     });
     if (res.status === 404) continue;
     if (!res.ok) throw new Error(`Open Food Facts ${res.status}`);
