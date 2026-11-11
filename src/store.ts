@@ -82,6 +82,8 @@ export interface Budget {
 export interface PersonalFood {
   id: number;
   barcode?: string;
+  /** Thai Food Composition Database code (e.g. "Z060002"). */
+  fcdCode?: string;
   name: string;
   brand?: string;
   /** What the numbers are for, e.g. "1 pack (60 g)". */
@@ -461,7 +463,9 @@ export class Store {
   saveFood(chatKey: string, f: Omit<PersonalFood, 'id' | 'updatedAt' | 'timesLogged'>): PersonalFood {
     const list = this.foodDb(chatKey);
     const key = (x: { name: string; brand?: string }) => `${x.name}|${x.brand ?? ''}`.trim().toLowerCase();
-    const old = list.find((x) => (f.barcode ? x.barcode === f.barcode : !x.barcode && key(x) === key(f)));
+    const old = list.find((x) =>
+      f.barcode ? x.barcode === f.barcode : f.fcdCode ? x.fcdCode === f.fcdCode : !x.barcode && !x.fcdCode && key(x) === key(f),
+    );
     const clean = Object.fromEntries(Object.entries(f).filter(([, v]) => v !== undefined && v !== '')) as typeof f;
     const item: PersonalFood = { id: old?.id ?? this.data.nextId++, timesLogged: old?.timesLogged ?? 0, ...clean, updatedAt: new Date().toISOString() };
     this.data.foodDb[chatKey] = [...list.filter((x) => x !== old), item];

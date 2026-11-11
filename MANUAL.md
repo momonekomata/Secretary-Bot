@@ -307,6 +307,7 @@ Thai words work in commands too, e.g. `/budget set อาหาร 6000`.
 
   Values are scaled to what you ate (it asks if the portion isn't clear). Correct anything by telling it ("#12 is 220 kcal per pack"); the correction is kept. Foods you log by name ("my usual protein shake") are looked up in your database too.
 - **Food without a barcode:** your own database first. For **Thai dishes** the bot looks up the **Thai Food Composition Database** of Mahidol University's Institute of Nutrition (INMU) with its web search. For **ingredients and international food** it uses **USDA FoodData Central** (the US government's free database). Whatever it looks up is saved to your database, so each dish is looked up only once, and it tells you where the numbers come from.
+- **Importing from the Thai Food Composition Database:** on inmu.mahidol.ac.th/thaifcd, open a food and use its download (an `.xls` file), then send that file to the bot. It is saved to your food database straight away (per serving for packaged products, per 100 g otherwise), without using the AI. Sending the same food again updates it. A food-group list file has no nutrient values, so the bot explains that instead.
 - `/fooddb` lists your foods, most-logged first; `/export` includes them as `food_database.csv`.
 - `/food` shows today against your calorie target. `/food yesterday` and `/food 2026-11-01` show other days; `/food remove 12` deletes an entry.
 - **Body profile:** tell it your sex, birth year, height, weight, activity level and goal (lose / maintain / gain). `/profile` shows it.

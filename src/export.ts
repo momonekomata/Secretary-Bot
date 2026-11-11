@@ -139,8 +139,8 @@ export function buildExport(store: Store, db: HealthDb, chatKey: string, timeZon
     {
       name: 'food_database.csv',
       data: csv(
-        ['id', 'barcode', 'name', 'brand', 'serving', 'kcal', 'protein_g', 'carbs_g', 'fat_g', 'source', 'times_logged', 'updated'],
-        foodDb.map((f) => [f.id, f.barcode, f.name, f.brand, f.serving, f.kcal, f.protein, f.carbs, f.fat, f.source, f.timesLogged, f.updatedAt.slice(0, 10)]),
+        ['id', 'barcode', 'name', 'brand', 'serving', 'kcal', 'protein_g', 'carbs_g', 'fat_g', 'source', 'times_logged', 'updated', 'thaifcd_code'],
+        foodDb.map((f) => [f.id, f.barcode, f.name, f.brand, f.serving, f.kcal, f.protein, f.carbs, f.fat, f.source, f.timesLogged, f.updatedAt.slice(0, 10), f.fcdCode]),
       ),
     },
     {
