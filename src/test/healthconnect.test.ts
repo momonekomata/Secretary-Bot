@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -135,9 +135,20 @@ describe('Health Connect export', () => {
     expect(text).toContain('History now covers 2 days.');
   });
 
-  it('says so when the folder has no export', () => {
-    expect(() => importHealthConnect(tempDir(), new HealthDb(null))).toThrow(/No Health Connect export/);
+  it('says why there is nothing to import: not connected, empty, or no zip', () => {
+    expect(() => importHealthConnect('/no/such/folder', new HealthDb(null))).toThrow(/doesn't exist inside the bot's container/);
+    const dir = tempDir();
+    expect(() => importHealthConnect(dir, new HealthDb(null))).toThrow(/is connected but empty/);
+    writeFileSync(join(dir, 'notes.txt'), 'x');
+    expect(() => importHealthConnect(dir, new HealthDb(null))).toThrow(/No Health Connect export \(\.zip\) in .*It has: notes\.txt/);
     expect(newestExport('/no/such/folder')).toBeNull();
+  });
+
+  it('finds an export one folder down', () => {
+    const dir = tempDir();
+    mkdirSync(join(dir, 'Health Connect'));
+    writeFileSync(join(dir, 'Health Connect', 'Health Connect.zip'), zip([]));
+    expect(newestExport(dir)).toBe(join(dir, 'Health Connect', 'Health Connect.zip'));
   });
 
   it('runs every night once the folder is mounted', () => {
