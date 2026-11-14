@@ -216,22 +216,61 @@ export function readHealthConnect(dbPath: string): Record<string, DayRecord> {
   }
 }
 
-/** The newest Health Connect export (.zip or .db) in `dir`, or null. */
+const isExport = (f: string) => /\.(zip|db)$/i.test(f);
+
+/** The newest Health Connect export (.zip or .db) in `dir` or one folder down, or null. */
 export function newestExport(dir: string): string | null {
-  let files: string[];
+  const found: { path: string; at: number }[] = [];
+  const scan = (d: string, depth: number) => {
+    let names: string[];
+    try {
+      names = readdirSync(d);
+    } catch {
+      return;
+    }
+    for (const f of names) {
+      const path = join(d, f);
+      try {
+        const st = statSync(path);
+        if (st.isFile() && isExport(f)) found.push({ path, at: st.mtimeMs });
+        else if (st.isDirectory() && depth > 0 && !f.startsWith('.') && !f.startsWith('@')) scan(path, depth - 1);
+      } catch {
+        // unreadable entry: skip
+      }
+    }
+  };
+  scan(dir, 1);
+  return found.sort((a, b) => b.at - a.at)[0]?.path ?? null;
+}
+
+/** Why no export was found in `dir`: the folder isn't mounted, can't be read, or holds no .zip. */
+export function whyNoExport(dir: string): string {
+  let names: string[];
   try {
-    files = readdirSync(dir).filter((f) => /\.(zip|db)$/i.test(f));
-  } catch {
-    return null;
+    names = readdirSync(dir);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT')
+      return t(
+        `The folder ${dir} doesn't exist inside the bot's container, so the NAS folder isn't connected yet. Check the line under the bot's volumes: in docker-compose.yml, then re-create the container (Container Manager → Project → Build).`,
+        `ไม่มีโฟลเดอร์ ${dir} ในคอนเทนเนอร์ของบอท แปลว่ายังไม่ได้เชื่อมโฟลเดอร์บน NAS ตรวจบรรทัดใต้ volumes: ของบอทใน docker-compose.yml แล้วสร้างคอนเทนเนอร์ใหม่ (Container Manager → Project → Build)`,
+      );
+    return t(`The bot can't open ${dir} (${code ?? (e as Error).message}). Check the folder's permissions on the NAS.`, `บอทเปิด ${dir} ไม่ได้ (${code ?? (e as Error).message}) ตรวจสิทธิ์ของโฟลเดอร์บน NAS`);
   }
-  const newest = files.map((f) => ({ f, at: statSync(join(dir, f)).mtimeMs })).sort((a, b) => b.at - a.at)[0];
-  return newest ? join(dir, newest.f) : null;
+  const shown = names.filter((n) => !n.startsWith('.') && !n.startsWith('@'));
+  if (!shown.length)
+    return t(
+      `${dir} is connected but empty. Check that the path in docker-compose.yml is the folder that holds Health Connect.zip (File Station → Properties → Location).`,
+      `เชื่อม ${dir} แล้วแต่โฟลเดอร์ว่าง ตรวจว่าพาธใน docker-compose.yml คือโฟลเดอร์ที่มี Health Connect.zip (File Station → Properties → Location)`,
+    );
+  const list = shown.slice(0, 8).join(', ') + (shown.length > 8 ? ', …' : '');
+  return t(`No Health Connect export (.zip) in ${dir}. It has: ${list}`, `ไม่พบไฟล์ส่งออกของ Health Connect (.zip) ใน ${dir} ในโฟลเดอร์มี: ${list}`);
 }
 
 /** Reads the newest export in `dir` and adds its days to the health history (filling gaps, never overwriting). */
 export function importHealthConnect(dir: string, db: HealthDb): HealthConnectReport {
   const file = newestExport(dir);
-  if (!file) throw new Error(t(`No Health Connect export (.zip) found in ${dir}.`, `ไม่พบไฟล์ส่งออกของ Health Connect (.zip) ใน ${dir}`));
+  if (!file) throw new Error(whyNoExport(dir));
   const work = mkdtempSync(join(tmpdir(), 'healthconnect-'));
   try {
     let dbPath = file;
