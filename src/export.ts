@@ -113,7 +113,7 @@ export function buildExport(store: Store, db: HealthDb, chatKey: string, timeZon
           'date', 'steps', 'kcal_burned', 'active_kcal', 'sleep_min', 'deep_min', 'rem_min', 'light_min', 'awake_min', 'bedtime', 'wake',
           'sleep_score', 'hr_avg', 'hr_min', 'hr_max', 'spo2_avg', 'spo2_min', 'weight_kg', 'body_fat_pct', 'skeletal_muscle_kg',
           'scale_bmr', 'workouts', 'workout_min', 'workout_kcal', 'hrv_ms', 'breaths_per_min', 'stress', 'floors', 'water_ml',
-          'blood_pressure', 'kcal_eaten_samsung', 'source',
+          'blood_pressure', 'kcal_eaten_samsung', 'source', 'resting_hr', 'vo2max',
         ],
         days.map(([day, r]) => [
           day, r.steps, r.energy?.total, r.energy?.active, r.sleep?.asleepMin, r.sleep?.deepMin, r.sleep?.remMin, r.sleep?.lightMin,
@@ -121,7 +121,7 @@ export function buildExport(store: Store, db: HealthDb, chatKey: string, timeZon
           r.oxygen?.min, r.weight?.kg, r.weight?.bodyFatPct, r.weight?.skeletalMuscleKg, r.weight?.bmr, r.workouts?.length || '',
           r.workouts?.reduce((n, w) => n + w.minutes, 0) || '', r.workouts?.reduce((n, w) => n + w.kcal, 0) || '', r.extra?.hrv,
           r.extra?.respiratory, r.extra?.stress, r.extra?.floors, r.extra?.waterMl,
-          r.extra?.bloodPressure ? `${r.extra.bloodPressure.systolic}/${r.extra.bloodPressure.diastolic}` : '', r.extra?.food?.kcal, r.source,
+          r.extra?.bloodPressure ? `${r.extra.bloodPressure.systolic}/${r.extra.bloodPressure.diastolic}` : '', r.extra?.food?.kcal, r.source, r.extra?.restingHr, r.extra?.vo2max,
         ]),
       ),
     },

@@ -124,6 +124,7 @@ It remembers the recent conversation. `/reset` forgets the conversation but keep
 | `/weight 65.5` | Log today's weight; `/weight` alone shows recent weights |
 | `/health [days]` | Watch data for the last days (default 2, up to 14) |
 | `/healthimport` | Import a Samsung Health export from Google Drive (`/healthimport status` shows progress) |
+| `/healthconnect` | Import the newest Health Connect export from the NAS folder now (it also runs every night) |
 
 ### Japanese
 | Command | What it does |
@@ -346,6 +347,15 @@ On top of the live data types, the import also brings in:
 - blood pressure
 - height (filled into your profile if it's missing)
 - food logged in Samsung Health
+
+**Health Connect export (Android).** Health Connect can save a full export every day to a folder, for example
+`Health Connect` in your NAS home folder. Once that folder is shared with the bot (SETUP-GUIDE.md, "Health Connect export"),
+the bot reads the newest export every night at the cleanup time (03:00) and fills in the history; `/healthconnect` does it right away.
+- It has everything any app wrote to Health Connect: steps, calories burned, heart rate, resting heart rate, SpO2, sleep and its stages,
+  weigh-ins (with body fat and the scale's BMR), workouts, VO₂ max, blood pressure and height.
+- When several apps record the same thing (Samsung Health, Google Fit, the phone's own step counter…), each day uses the most complete
+  single app instead of adding them up. Workouts recorded by two apps at once count once.
+- It only fills in what's missing: days that already have data from Health Sync or a Samsung export keep their values.
 
 ---
 

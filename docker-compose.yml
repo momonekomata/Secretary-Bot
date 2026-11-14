@@ -13,6 +13,9 @@ services:
     restart: always
     volumes:
       - ./data:/data
+      # Optional: the NAS folder where Android saves its daily Health Connect export (read-only), for /healthconnect.
+      # Use the folder's path from File Station → Properties, in quotes if it has spaces:
+      # - "/volume1/homes/<you>/Health Connect:/healthconnect:ro"
     environment:
       # Docker runs in UTC unless told otherwise; keep schedules on your local time.
       - TZ=Asia/Bangkok

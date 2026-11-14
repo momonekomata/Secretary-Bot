@@ -2,6 +2,8 @@ import { BudgetExceeded } from './agent';
 import { archiveUsage, type Briefings } from './briefings';
 import type { Channels } from './channel';
 import type { Config } from './config';
+import { existsSync } from 'node:fs';
+import { importHealthConnect } from './healthconnect';
 import type { HealthData } from './healthdb';
 import { lang, t } from './i18n';
 import type { JapaneseDaily } from './japanese';
@@ -122,6 +124,17 @@ export class Scheduler {
     if (health?.sync) {
       // Nightly: save the last few days from Health Sync into the long-term history.
       jobs.push({ key: 'healthdb', at: s.cleanup || '03:00', run: async () => void (await health.lastDays(3, new Date(), this.cfg.timezone)) });
+    }
+    if (health && existsSync(this.cfg.healthConnectDir)) {
+      // Nightly, once the NAS folder is mounted: the newest Health Connect export in it fills in the health history.
+      jobs.push({
+        key: 'healthconnect',
+        at: s.cleanup || '03:00',
+        run: async () => {
+          const r = importHealthConnect(this.cfg.healthConnectDir, health.db);
+          this.log(`Health Connect: ${r.days} days read from ${r.file}`);
+        },
+      });
     }
     const jp = this.japanese;
     if (jp) jobs.push({ key: 'japanese', at: s.japanese, run: () => this.broadcast((chat) => jp.daily(chat)) });
