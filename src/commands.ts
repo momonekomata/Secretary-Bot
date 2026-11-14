@@ -15,6 +15,7 @@ import { localDay } from './time';
 import { weatherText } from './tools';
 import { formatDay as formatWatchDay } from './healthsync';
 import { buildExport } from './export';
+import { formatHealthConnectReport, importHealthConnect } from './healthconnect';
 import { foodLine } from './fooddb';
 import { budgetAlerts, CATEGORY_KEYS, findCategory, report, scanEmail, scanSummary, txnLine } from './money';
 import { formatReport, healthImport, importFromDrive } from './samsungexport';
@@ -103,7 +104,7 @@ export interface CommandContext {
 }
 
 /** Commands that call an AI or an outside API: channels show "typing…" while they run. */
-export const SLOW_COMMANDS = new Set(['/review', '/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say', '/budget', '/money', '/voices', '/voicestyle', '/style']);
+export const SLOW_COMMANDS = new Set(['/review', '/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say', '/budget', '/money', '/voices', '/voicestyle', '/style', '/healthconnect']);
 
 /** The /help text, in the current language. */
 export function helpText(): string {
@@ -121,8 +122,8 @@ export function helpText(): string {
       '🇯🇵 ภาษาญี่ปุ่น: /review (ทำรีวิว WaniKani ที่นี่เลย), /kanji, /word (คันจิและคำศัพท์ประจำวัน ส่งทุกวันตอน 12:00 และนับเป็นรีวิวเมื่อถึงกำหนด), /jlpt N4',
     ),
     t(
-      '🍽️ Health: tell me or send a photo of what you ate; /food, /bmi, /profile, /weight 65.5, /health (watch data), /healthimport (Samsung Health export from Drive)',
-      '🍽️ สุขภาพ: บอกหรือส่งรูปอาหารที่กินมาได้เลย; /food, /bmi, /profile, /weight 65.5, /health (ข้อมูลนาฬิกา), /healthimport (นำเข้าข้อมูล Samsung Health จาก Drive)',
+      '🍽️ Health: tell me or send a photo of what you ate; /food, /bmi, /profile, /weight 65.5, /health (watch data), /healthimport (Samsung Health export from Drive), /healthconnect (Health Connect export on the NAS)',
+      '🍽️ สุขภาพ: บอกหรือส่งรูปอาหารที่กินมาได้เลย; /food, /bmi, /profile, /weight 65.5, /health (ข้อมูลนาฬิกา), /healthimport (นำเข้าข้อมูล Samsung Health จาก Drive), /healthconnect (ข้อมูล Health Connect บน NAS)',
     ),
     t('🎬 Roleplay: /roleplay (scenes, stories, Japanese conversation practice), /roleplay end', '🎬 บทบาทสมมติ: /roleplay (ฉาก เรื่องราว ฝึกสนทนาภาษาญี่ปุ่น), /roleplay end'),
     t('🌦️ Weather: /weather, /forecast (7 days), /weekend', '🌦️ อากาศ: /weather, /forecast (7 วัน), /weekend'),
@@ -876,6 +877,19 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
             `⌚ ข้อมูลนาฬิกา\n${summaries.map((s) => `• ${formatWatchDay(s)}`).join('\n')}\n\nข้อมูลวันนี้จะเพิ่มขึ้นเมื่อ Health Sync อัปโหลด ประวัติที่เก็บไว้: ${h.db.size} วัน ถามแนวโน้มได้ เช่น "ปีนี้การนอนของฉันเปลี่ยนไปยังไง?"`,
           ),
         };
+      }
+      case '/healthconnect': {
+        try {
+          const report = importHealthConnect(cfg.healthConnectDir, agent.health.db);
+          return { text: formatHealthConnectReport(report, agent.health.db.size) };
+        } catch (e) {
+          return {
+            text: t(
+              `📲 ${(e as Error).message}\nThe bot reads Android's Health Connect export from a NAS folder shared into the container (SETUP-GUIDE.md, "Health Connect export").`,
+              `📲 ${(e as Error).message}\nบอทอ่านไฟล์ส่งออกของ Health Connect จากโฟลเดอร์บน NAS ที่แชร์เข้าคอนเทนเนอร์ (SETUP-GUIDE.md หัวข้อ "Health Connect export")`,
+            ),
+          };
+        }
       }
       case '/healthimport': {
         if (!google?.has('drive')) return needGoogle();

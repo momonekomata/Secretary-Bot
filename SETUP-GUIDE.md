@@ -124,6 +124,14 @@ In Telegram, search for your bot's username, open it, and press **Start**. It re
   and send `/healthimport`. It runs in the background (keep chatting meanwhile), posts progress as it downloads, unpacks and reads
   the files, and ends with what it imported. `/healthimport status` shows where it is. Besides steps, sleep, heart rate and workouts it
   also brings in HRV, breathing rate, stress, floors climbed, water, blood pressure, height and the food you logged in Samsung Health.
+- **Health Connect export:** Android's Health Connect can save an export (`Health Connect.zip`) to a folder every day, for example
+  through the Synology Drive or a network-folder app on the phone. To let the bot read it:
+  1. In File Station, right-click the folder → **Properties** and copy its location (e.g. `/volume1/homes/<you>/Health Connect`).
+  2. In `docker-compose.yml`, under the bot's `volumes:`, uncomment the Health Connect line and put that location before
+     `:/healthconnect:ro` (keep the quotes; `ro` means the bot can only read it).
+  3. Re-create the container so it sees the new folder: in Container Manager → Project → **Build** (or `docker compose up -d`).
+  4. Send `/healthconnect`. From then on it imports the newest export every night at 03:00.
+  Inside the container the folder is `/healthconnect`; set `HEALTH_CONNECT_DIR` in `.env` only if you mount it somewhere else.
 - `/roleplay` starts a scene: a story, a mystery, or Japanese conversation practice like ordering ramen in Tokyo. `/roleplay end` stops.
 - `/forecast` gives 7 days of weather.
 - `/persona` gives it a personality: tap a ready-made one, or describe your own, e.g.

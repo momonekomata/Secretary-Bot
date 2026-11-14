@@ -107,6 +107,10 @@ export interface Extras {
   stress?: number;
   waterMl?: number;
   bloodPressure?: { systolic: number; diastolic: number };
+  /** Resting heart rate (bpm). */
+  restingHr?: number;
+  /** VO₂ max (mL/kg/min). */
+  vo2max?: number;
   heightCm?: number;
   /** Food logged in Samsung Health. */
   food?: { kcal: number; items: { name: string; kcal: number; meal: string }[] };
@@ -350,11 +354,13 @@ export function formatDay(s: DaySummary): string {
     );
   const x = s.extra;
   if (x) {
+    if (x.restingHr) parts.push(t(`resting HR ${x.restingHr} bpm`, `ชีพจรขณะพัก ${x.restingHr} bpm`));
     if (x.hrv) parts.push(`HRV ${x.hrv} ms`);
     if (x.respiratory) parts.push(t(`breathing ${x.respiratory}/min`, `หายใจ ${x.respiratory} ครั้ง/นาที`));
     if (x.stress) parts.push(t(`stress ${x.stress}`, `ความเครียด ${x.stress}`));
     if (x.floors) parts.push(t(`${x.floors} floors`, `ขึ้นบันได ${x.floors} ชั้น`));
     if (x.waterMl) parts.push(t(`water ${x.waterMl} ml`, `ดื่มน้ำ ${x.waterMl} ml`));
+    if (x.vo2max) parts.push(`VO₂ max ${x.vo2max}`);
     if (x.bloodPressure) parts.push(t(`blood pressure ${x.bloodPressure.systolic}/${x.bloodPressure.diastolic}`, `ความดัน ${x.bloodPressure.systolic}/${x.bloodPressure.diastolic}`));
     if (x.food?.kcal) {
       const items = `${x.food.items.slice(0, 6).map((i) => i.name).join(', ')}${x.food.items.length > 6 ? ', …' : ''}`;

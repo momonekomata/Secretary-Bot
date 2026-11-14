@@ -117,6 +117,8 @@ export const config = {
   wanikaniToken: process.env.WANIKANI_TOKEN ?? '',
   /** Google Maps Platform key (Places API (New) + Routes API). */
   mapsKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
+  /** Folder (inside the container) where Android's daily Health Connect export (.zip) lands; see docker-compose.yml. */
+  healthConnectDir: process.env.HEALTH_CONNECT_DIR ?? '/healthconnect',
   /** USDA FoodData Central key (free); empty uses USDA's shared DEMO_KEY, which has a low hourly limit. */
   usdaKey: process.env.USDA_API_KEY ?? '',
 
