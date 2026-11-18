@@ -11,11 +11,12 @@ import { findPersona, PERSONAS } from './personas';
 import { bodyNumbers, formatBody, formatFoodDay } from './health';
 import { JLPT_LEVELS, type JapaneseDaily } from './japanese';
 import type { Reviews } from './review';
-import { localDay } from './time';
+import { formatTime, localDay } from './time';
 import { weatherText } from './tools';
 import { formatDay as formatWatchDay } from './healthsync';
 import { buildExport } from './export';
 import { formatHealthConnectReport, importHealthConnect } from './healthconnect';
+import { formatReminders, markDone } from './reminders';
 import { foodLine } from './fooddb';
 import { budgetAlerts, CATEGORY_KEYS, findCategory, report, scanEmail, scanSummary, txnLine } from './money';
 import { formatReport, healthImport, importFromDrive } from './samsungexport';
@@ -111,7 +112,7 @@ export function helpText(): string {
   return [
     t('Hi! I am your personal secretary and news curator. Just talk to me, send a photo, or send a voice note.', 'สวัสดี! ฉันเป็นเลขาส่วนตัวและผู้คัดสรรข่าวของคุณ คุยกับฉันได้เลย ส่งรูป หรือส่งข้อความเสียงก็ได้'),
     '',
-    t('🗓️ Secretary: /todo, /add <task>, /done <id>, /clear', '🗓️ เลขา: /todo, /add <งาน>, /done <id>, /clear'),
+    t('🗓️ Secretary: /todo, /add <task>, /done <id>, /clear, /reminders (and what you\'ve done)', '🗓️ เลขา: /todo, /add <งาน>, /done <id>, /clear, /reminders (และสิ่งที่ทำแล้ว)'),
     t('📰 News: /news [topic], /topics, /addtopic <topic>, /removetopic <topic>', '📰 ข่าว: /news [หัวข้อ], /topics, /addtopic <หัวข้อ>, /removetopic <หัวข้อ>'),
     t('🌅 Briefings: /brief (morning briefing now), /weather [city], /weekend, /setcity <city>', '🌅 สรุปประจำวัน: /brief (สรุปข่าวเช้าตอนนี้), /weather [เมือง], /weekend, /setcity <เมือง>'),
     t('📧 Google: /calendar [days], /inbox, /mail <search>, /gtask [title], /gdone <number>, /drive [search]', '📧 Google: /calendar [จำนวนวัน], /inbox, /mail <คำค้น>, /gtask [ชื่องาน], /gdone <หมายเลข>, /drive [คำค้น]'),
@@ -949,6 +950,20 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
       }
       case '/status':
         return { text: await ctx.status() };
+
+      // --- reminders ---
+      case '/reminders':
+        return formatReminders(store.reminders(chatKey), now, cfg.timezone);
+      case '/rdone': {
+        const r = markDone(store, chatKey, Number(arg.replace('#', '')), now, cfg.timezone);
+        if (!r) return { text: t(`No reminder #${arg}. See /reminders.`, `ไม่มีการแจ้งเตือน #${arg} ดูได้ที่ /reminders`) };
+        const next = store.reminders(chatKey).find((x) => x.id === r.id);
+        return {
+          text:
+            t(`✅ Noted: ${r.text} — done today.`, `✅ บันทึกแล้ว: ${r.text} วันนี้ทำแล้ว`) +
+            (next && r.untilDone ? t(` No more reminders about it today; next: ${formatTime(new Date(next.dueAt), cfg.timezone)}.`, ` วันนี้จะไม่เตือนอีก ครั้งถัดไป: ${formatTime(new Date(next.dueAt), cfg.timezone)}`) : ''),
+        };
+      }
 
       // --- to-dos ---
       case '/todo': {

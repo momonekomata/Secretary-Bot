@@ -42,9 +42,9 @@ export class Channels {
     return [channel, chatKey.slice(i + 1)];
   }
 
-  async send(chatKey: string, text: string) {
+  async send(chatKey: string, text: string, buttons?: Button[][]) {
     const [channel, id] = this.resolve(chatKey);
-    await channel.send(id, text);
+    await channel.send(id, text, buttons);
   }
 
   /** Sends a file where supported, otherwise just the caption. */

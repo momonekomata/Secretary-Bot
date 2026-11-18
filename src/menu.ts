@@ -15,6 +15,7 @@ export const MENU: [string, string, string][] = [
   ['forecast', '7-day forecast', 'พยากรณ์อากาศ 7 วัน'],
   ['weekend', 'Weekend weather planner', 'วางแผนวันหยุดตามสภาพอากาศ'],
   ['setcity', 'Set your home city', 'ตั้งเมืองของคุณ'],
+  ['reminders', 'Your reminders, and what you have done', 'การแจ้งเตือน และสิ่งที่ทำแล้ว'],
   ['todo', 'Show to-do list', 'ดูรายการสิ่งที่ต้องทำ'],
   ['add', 'Add a to-do', 'เพิ่มสิ่งที่ต้องทำ'],
   ['done', 'Mark a to-do done', 'ทำเครื่องหมายว่าเสร็จแล้ว'],
@@ -62,7 +63,7 @@ export const MENU: [string, string, string][] = [
 ];
 
 /** Other names for listed commands (not shown in the menu, to keep it short). */
-export const MENU_ALIASES = ['start', 'money', 'pref', 'limits', 'cap', 'remotopic', 'deltopic', 'style'];
+export const MENU_ALIASES = ['start', 'money', 'pref', 'limits', 'cap', 'remotopic', 'deltopic', 'style', 'rdone'];
 
 export function menuFor(lang: Lang): { command: string; description: string }[] {
   return MENU.map(([command, en, th]) => ({ command, description: lang === 'th' ? th : en }));

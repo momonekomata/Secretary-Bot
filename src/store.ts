@@ -24,6 +24,12 @@ export interface Reminder {
   dueAt: string;
   /** Repeating reminders are rescheduled after they fire. */
   repeat?: Repeat;
+  /** Keeps following up every `everyMin` minutes until marked done or `stopAt` (local HH:MM) passes. */
+  untilDone?: { everyMin: number; stopAt: string };
+  /** For until-done reminders: the first time of the current day's run (the next day starts from its wall-clock time). */
+  firstAt?: string;
+  /** Local days (YYYY-MM-DD) the user marked it done. */
+  doneDays?: string[];
 }
 
 export interface Todo {
@@ -321,16 +327,29 @@ export class Store {
     return chatKey ? this.data.reminders.filter((r) => r.chatKey === chatKey) : this.data.reminders;
   }
 
-  addReminder(chatKey: string, text: string, dueAt: Date, repeat: Repeat = 'none'): Reminder {
-    const r: Reminder = { id: this.data.nextId++, chatKey, text, dueAt: dueAt.toISOString(), ...(repeat !== 'none' ? { repeat } : {}) };
+  addReminder(chatKey: string, text: string, dueAt: Date, repeat: Repeat = 'none', untilDone?: Reminder['untilDone']): Reminder {
+    const r: Reminder = {
+      id: this.data.nextId++,
+      chatKey,
+      text,
+      dueAt: dueAt.toISOString(),
+      ...(repeat !== 'none' ? { repeat } : {}),
+      ...(untilDone ? { untilDone, firstAt: dueAt.toISOString() } : {}),
+    };
     this.data.reminders.push(r);
     this.save();
     return r;
   }
 
   /** Puts a fired repeating reminder back with its next time (same id, so it can still be cancelled). */
-  rescheduleReminder(r: Reminder, next: Date) {
-    this.data.reminders.push({ ...r, dueAt: next.toISOString() });
+  rescheduleReminder(r: Reminder, next: Date, firstOfDay = false) {
+    this.data.reminders.push({ ...r, dueAt: next.toISOString(), ...(firstOfDay ? { firstAt: next.toISOString() } : {}) });
+    this.save();
+  }
+
+  /** Replaces a pending reminder (same id and chat) with `r`. */
+  updateReminder(r: Reminder) {
+    this.data.reminders = this.data.reminders.map((x) => (x.id === r.id && x.chatKey === r.chatKey ? r : x));
     this.save();
   }
 
