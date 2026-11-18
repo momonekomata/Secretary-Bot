@@ -7,8 +7,9 @@ import { importHealthConnect } from './healthconnect';
 import type { HealthData } from './healthdb';
 import { lang, t } from './i18n';
 import type { JapaneseDaily } from './japanese';
+import { isDoneOn, nextTime, reminderMessage } from './reminders';
 import type { Store } from './store';
-import { localClock, nextOccurrence, parseHHMM } from './time';
+import { localClock, parseHHMM } from './time';
 import { resolveCity } from './tools';
 import { airQuality, aqiCategory } from './weather';
 import { fetchWaniKani } from './wanikani';
@@ -25,10 +26,7 @@ export function nudgeText(lessons: number, reviews: number, level: number): stri
   return `🔥 Daily quest: you have ${parts} waiting on WaniKani (level ${level}). がんばって！`;
 }
 
-/** The message sent when a reminder is due. */
-export function reminderText(text: string): string {
-  return t(`⏰ ${text}`, `⏰ แจ้งเตือน: ${text}`);
-}
+export { reminderText } from './reminders';
 
 /** The once-a-day air quality alert. */
 export function aqiAlertText(city: string, usAqi: number, pm25: number): string {
@@ -162,12 +160,13 @@ export class Scheduler {
   }
 
   async tick(now = new Date()) {
+    const tz = this.cfg.timezone;
     for (const r of this.store.takeDueReminders(now)) {
-      if (r.repeat) {
-        const next = nextOccurrence(new Date(r.dueAt), r.repeat, this.cfg.timezone, now);
-        if (next) this.store.rescheduleReminder(r, next);
-      }
-      await this.channels.send(r.chatKey, reminderText(r.text)).catch((e) => this.log(`Reminder #${r.id} failed:`, (e as Error).message));
+      const next = nextTime(r, now, tz);
+      if (next) this.store.rescheduleReminder(r, next, !!r.untilDone && localClock(next, tz).day !== localClock(now, tz).day);
+      if (r.untilDone && isDoneOn(r, localClock(now, tz).day)) continue; // already done today
+      const m = reminderMessage(r);
+      await this.channels.send(r.chatKey, m.text, m.buttons).catch((e) => this.log(`Reminder #${r.id} failed:`, (e as Error).message));
     }
     const day = localClock(now, this.cfg.timezone).day;
     for (const job of this.jobs) {

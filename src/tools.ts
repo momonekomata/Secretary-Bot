@@ -12,7 +12,8 @@ import { fetchThaiFcd, saveThaiFcd, thaiFcdRef } from './thaifcd';
 import { budgetAlerts, CATEGORY_KEYS, findCategory, logTxn, report, scanEmail, scanSummary, txnLine } from './money';
 import { fetchNews, formatNews } from './news';
 import type { City, Store } from './store';
-import { formatTime, localDay, REPEATS, type Repeat } from './time';
+import { formatTime, localDay, parseHHMM, REPEATS, type Repeat } from './time';
+import { DEFAULT_NAG_MINUTES, DEFAULT_STOP_AT, markDone, reminderLine } from './reminders';
 import { airQuality, forecast, formatWeather, geocode } from './weather';
 import { fetchWaniKani } from './wanikani';
 
@@ -54,13 +55,34 @@ const CORE: ToolSpec[] = [
     name: 'set_reminder',
     description:
       'Schedule a chat message to the user, once or repeating. Work out the first time from the current time you were given and send it as ISO 8601 with a UTC offset, e.g. 2026-11-08T09:00:00+07:00. For "every Monday at 9" use the next Monday 09:00 with repeat "weekly".',
-    parameters: obj({
-      at: str('First time to send it, ISO 8601 with offset.'),
-      text: str('What to say when it fires, written to the user.'),
-      repeat: { type: 'string', enum: [...REPEATS], description: 'none, daily, weekdays (Mon-Fri), weekly or monthly.' },
-    }),
+    parameters: obj(
+      {
+        at: str('First time to send it, ISO 8601 with offset.'),
+        text: str('What to say when it fires, written to the user.'),
+        repeat: { type: 'string', enum: [...REPEATS], description: 'none, daily, weekdays (Mon-Fri), weekly or monthly.' },
+        until_done: {
+          type: 'boolean',
+          description:
+            'For something the user must confirm (take vitamins, medicine, water the plants): keep following up until they mark it done, then start again at the first time next day (with repeat daily). Each day they mark it done is recorded.',
+        },
+        every_minutes: int(`With until_done: minutes between follow-ups (15 to 360, default ${DEFAULT_NAG_MINUTES}).`),
+        stop_at: str(`With until_done: local time (HH:MM) after which no more follow-ups that day (default ${DEFAULT_STOP_AT}).`),
+      },
+      ['at', 'text', 'repeat'],
+    ),
   },
-  { name: 'list_reminders', description: "List this user's pending reminders with their ids.", parameters: obj({}) },
+  {
+    name: 'list_reminders',
+    description:
+      "List this user's reminders with their ids, and for until-done reminders the days the user marked them done. That record is the only source for whether they did it (e.g. took their vitamins): never guess from the conversation.",
+    parameters: obj({}),
+  },
+  {
+    name: 'reminder_done',
+    description:
+      'Record that the user did what a reminder asks today (e.g. "I took my vitamins"): stops today\'s follow-ups and adds today to its record. Use list_reminders for the id if you do not have it.',
+    parameters: obj({ id: int('Reminder id') }),
+  },
   { name: 'cancel_reminder', description: 'Cancel a reminder (including a whole repeating series) by id.', parameters: obj({ id: int('Reminder id') }) },
   { name: 'todo_add', description: "Add an item to the user's simple to-do list kept by this bot.", parameters: obj({ title: str('The to-do item.') }) },
   { name: 'todo_list', description: "Show the user's to-do list with ids.", parameters: obj({}) },
@@ -493,12 +515,27 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
         if (at.getTime() <= now.getTime()) return fail(`That time (${formatTime(at, tz)}) is in the past.`);
         if (at.getTime() - now.getTime() > 366 * 864e5) return fail('Reminders can be at most a year ahead.');
         if (!s('text')) return fail('Reminder text was empty.');
-        const r = ctx.store.addReminder(ctx.chatKey, s('text').slice(0, 1000), at, repeat);
-        return ok(`Reminder #${r.id} set for ${formatTime(at, tz)}${repeat !== 'none' ? `, repeating ${repeat}` : ''}.`);
+        let untilDone: { everyMin: number; stopAt: string } | undefined;
+        if (a.until_done === true) {
+          const every = Number(a.every_minutes) || DEFAULT_NAG_MINUTES;
+          const stop = s('stop_at') || DEFAULT_STOP_AT;
+          if (parseHHMM(stop) === null) return fail(`stop_at "${stop}" is not a HH:MM time.`);
+          untilDone = { everyMin: Math.min(360, Math.max(15, Math.round(every))), stopAt: stop.padStart(5, '0') };
+        }
+        const r = ctx.store.addReminder(ctx.chatKey, s('text').slice(0, 1000), at, repeat, untilDone);
+        return ok(
+          `Reminder #${r.id} set for ${formatTime(at, tz)}${repeat !== 'none' ? `, repeating ${repeat}` : ''}` +
+            (untilDone ? `, following up every ${untilDone.everyMin} min until marked done (not after ${untilDone.stopAt}); the message has a Done button.` : '.'),
+        );
       }
       case 'list_reminders': {
         const rs = ctx.store.reminders(ctx.chatKey);
-        return ok(rs.length ? rs.map((r) => `#${r.id} at ${formatTime(new Date(r.dueAt), tz)}${r.repeat ? ` (repeats ${r.repeat})` : ''}: ${r.text}`).join('\n') : 'No pending reminders.');
+        return ok(rs.length ? rs.map((r) => reminderLine(r, now, tz)).join('\n') : 'No pending reminders.');
+      }
+      case 'reminder_done': {
+        const r = markDone(ctx.store, ctx.chatKey, Number(a.id), now, tz);
+        if (!r) return fail(`No reminder #${a.id}.`);
+        return ok(`Marked #${r.id} done for today. ${reminderLine(r, now, tz)}`);
       }
       case 'cancel_reminder':
         return ctx.store.removeReminder(ctx.chatKey, Number(a.id)) ? ok(`Cancelled reminder #${a.id}.`) : fail(`No pending reminder #${a.id}.`);

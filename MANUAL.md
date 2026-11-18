@@ -72,6 +72,7 @@ It remembers the recent conversation. `/reset` forgets the conversation but keep
 ### Secretary
 | Command | What it does |
 |---|---|
+| `/reminders` | Your reminders, with what you've marked done (✅ buttons to tick off today) |
 | `/todo` | Show your to-do list |
 | `/add <task>` | Add a to-do, e.g. `/add Call the dentist` |
 | `/done <id>` | Mark a to-do done, e.g. `/done 12` |
@@ -178,6 +179,12 @@ It remembers the recent conversation. `/reset` forgets the conversation but keep
 - "Remind me tomorrow morning to call mum"
 
 Reminders can repeat daily, on weekdays, weekly or monthly. Ask "what reminders do I have?" to see them, or "cancel the timesheet reminder".
+
+**Reminders that keep coming back until you've done it** (vitamins, medicine, watering the plants):
+- Say "remind me to take my vitamins every day at 9, every hour until I've taken them". You can also pick how often and when to stop for the day ("every 2 hours, not after 22:00"); the default is every hour until 21:00.
+- Each reminder has a **✅ Done** button. Tap it, or just tell the bot ("I took my vitamins"). It stops reminding for the rest of the day and starts again at the first time the next day.
+- Every day you mark it done is recorded, so "did I take my vitamins this week?" gets a real answer. `/reminders` lists your reminders with today's status and the days done in the last two weeks.
+- Older reminders set up before this (plain repeating ones) have no record. To switch, ask the bot to cancel the old vitamin reminders and set a new one as above.
 
 **Memories.** The bot saves lasting facts about you ("my sister's name is Ploy", "I'm allergic to shrimp") and uses them later.
 - Say "remember that…" to save something on purpose.
