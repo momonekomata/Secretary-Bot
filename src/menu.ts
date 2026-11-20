@@ -42,6 +42,7 @@ export const MENU: [string, string, string][] = [
   ['jlpt', 'Level for kanji and word of the day', 'ระดับของคันจิและคำศัพท์ประจำวัน'],
   ['roleplay', 'Start a roleplay or Japanese practice', 'เริ่มบทบาทสมมติหรือฝึกภาษาญี่ปุ่น'],
   ['persona', 'Choose my personality', 'เลือกบุคลิกของฉัน'],
+  ['character', 'My looks, birthday, likes and quirks', 'รูปลักษณ์ วันเกิด สิ่งที่ชอบ และนิสัยของฉัน'],
   ['name', 'Rename me', 'เปลี่ยนชื่อฉัน'],
   ['prefs', 'Your standing preferences', 'สิ่งที่คุณตั้งค่าไว้ให้ฉันทำเสมอ'],
   ['voice', 'When to answer with voice', 'เมื่อไหร่ให้ตอบเป็นเสียง'],

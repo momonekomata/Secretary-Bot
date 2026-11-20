@@ -13,6 +13,7 @@ import { budgetAlerts, CATEGORY_KEYS, findCategory, logTxn, report, scanEmail, s
 import { fetchNews, formatNews } from './news';
 import type { City, Store } from './store';
 import { formatTime, localDay, parseHHMM, REPEATS, type Repeat } from './time';
+import { CHARACTER_SECTIONS, editCharacter, findSection, type CharacterEdit } from './character';
 import { checkDays, DEFAULT_NAG_MINUTES, DEFAULT_STOP_AT, endedLine, markDone, reminderLine } from './reminders';
 import { airQuality, forecast, formatWeather, geocode } from './weather';
 import { fetchWaniKani } from './wanikani';
@@ -313,6 +314,23 @@ const PREFERENCES: ToolSpec[] = [
   { name: 'preference_remove', description: 'Remove a standing preference by its number (1 = first).', parameters: obj({ number: int('Preference number.') }) },
 ];
 
+const CHARACTER: ToolSpec = {
+  name: 'character_update',
+  description:
+    'Edit your own character sheet (looks, birthday, likes, dislikes, quirks, habits, how you talk, backstory). Use it when the user tells you a detail about yourself ' +
+    '("you have cat ears", "your birthday is 3 March", "add that you hate thunder"), and when you make up a lasting detail about yourself in chat, so you stay consistent. ' +
+    'Not for facts about the user (use remember) or how to format replies (use preference_add).',
+  parameters: obj(
+    {
+      section: { type: 'string', enum: [...CHARACTER_SECTIONS], description: 'Which part of the sheet.' },
+      action: { type: 'string', enum: ['add', 'set', 'remove', 'clear'], description: 'add an item; set replaces the section with this one item; remove deletes item number; clear empties the section.' },
+      text: str('For add/set: the detail, one short sentence in the language the user used. For birthday: the date, e.g. 03-03 or 3 March.'),
+      number: int('For remove: item number in that section (1 = first), as shown in the sheet.'),
+    },
+    ['section', 'action'],
+  ),
+};
+
 const WANIKANI: ToolSpec = {
   name: 'get_wanikani_status',
   description: "Get the user's live WaniKani progress: level, lessons and reviews available now, upcoming reviews, and item counts by SRS stage.",
@@ -463,7 +481,7 @@ const MAPS: ToolSpec[] = [
 
 export function toolSpecs(opts: { wanikani: boolean; google: Google | null; maps: boolean }): ToolSpec[] {
   const g = opts.google;
-  return [...CORE, ...PREFERENCES, VOICE_STYLE, ...MONEY, ...(g?.has('gmail') ? [MONEY_EMAIL] : []), ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : [])];
+  return [...CORE, ...PREFERENCES, CHARACTER, VOICE_STYLE, ...MONEY, ...(g?.has('gmail') ? [MONEY_EMAIL] : []), ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : [])];
 }
 
 const STAGES = ['Lesson', 'Apprentice 1', 'Apprentice 2', 'Apprentice 3', 'Apprentice 4', 'Guru 1', 'Guru 2', 'Master', 'Enlightened', 'Burned'];
@@ -785,6 +803,25 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
         if (!(i >= 0 && i < prefs.length)) return fail(`No preference #${a.number}. There are ${prefs.length}.`);
         ctx.store.updateSettings({ preferences: prefs.filter((_, j) => j !== i) });
         return ok(`Removed: ${prefs[i]}`);
+      }
+      case 'character_update': {
+        const section = findSection(s('section'));
+        if (!section) return fail(`Unknown section "${s('section')}". Use one of: ${CHARACTER_SECTIONS.join(', ')}.`);
+        const action = s('action');
+        const edit: CharacterEdit | null =
+          action === 'add' || action === 'set'
+            ? { action, section, text: s('text') }
+            : action === 'remove'
+              ? { action, section, number: Number(a.number) }
+              : action === 'clear'
+                ? { action, section }
+                : null;
+        if (!edit) return fail(`Unknown action "${action}".`);
+        const r = editCharacter(ctx.store.settings().character ?? {}, edit);
+        if ('error' in r) return fail(r.error);
+        ctx.store.updateSettings({ character: r.character });
+        const items = r.character[section] ?? [];
+        return ok(`Character sheet updated. ${section}: ${items.length ? items.map((x, i) => `${i + 1}. ${x}`).join(' ') : '(empty)'}`);
       }
       case 'roleplay_start':
         if (!s('scenario')) return fail('Describe the scene.');

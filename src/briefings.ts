@@ -7,6 +7,7 @@ import { formatEmails, formatEvents, formatTasks } from './google';
 import { fetchNews, formatNews } from './news';
 import type { Store, UsageRow } from './store';
 import { modelInfo } from './models';
+import { isBirthday } from './character';
 import { localClock } from './time';
 import { t } from './i18n';
 import { bodyNumbers } from './health';
@@ -132,6 +133,19 @@ export class Briefings {
         STYLE,
       formatWeather(city, f, aq, 2),
       'weather',
+    );
+  }
+
+  /** The bot's birthday message (from its character sheet), or null when today isn't its birthday. */
+  async birthday(): Promise<string | null> {
+    const c = this.store.settings().character;
+    if (!isBirthday(c, this.now(), this.cfg.timezone)) return null;
+    return this.agent.generate(
+      'Today is your own birthday (see your character sheet). Send the user one short, warm message about it, fully in character: ' +
+        'your personality, quirks and how you talk, in the language their preferences ask for (else the one they usually write in). ' +
+        'You might share how you feel, a small birthday wish, or a playful request; no lists, no headings, and don\'t ask for gifts or money.',
+      `It's your birthday today (${c!.birthday![0]}).`,
+      'birthday',
     );
   }
 

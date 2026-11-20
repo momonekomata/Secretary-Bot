@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Effort } from './config';
 import type { ReviewSession } from './review';
+import type { Character } from './character';
 import type { Repeat } from './time';
 
 /** One remembered turn. Only plain text is kept between turns (see agent.ts for why). */
@@ -140,6 +141,8 @@ export interface Settings {
   persona?: string;
   /** Standing instructions from the user ("always reply in Thai", "use emoji"), kept across personalities. */
   preferences?: string[];
+  /** The bot's character sheet (looks, birthday, likes…), kept across personalities. */
+  character?: Character;
   /** Gemini prebuilt voice for spoken replies, and how to speak. */
   ttsVoice?: string;
   /** A different voice per language (overrides ttsVoice for that language), e.g. { th: 'Leda', ja: 'Autonoe' }. */

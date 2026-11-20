@@ -17,6 +17,7 @@ import { formatDay as formatWatchDay } from './healthsync';
 import { buildExport } from './export';
 import { formatHealthConnectReport, importHealthConnect } from './healthconnect';
 import { formatReminders, markDone } from './reminders';
+import { editCharacter, findSection, formatCharacter, type CharacterEdit } from './character';
 import { foodLine } from './fooddb';
 import { budgetAlerts, CATEGORY_KEYS, findCategory, report, scanEmail, scanSummary, txnLine } from './money';
 import { formatReport, healthImport, importFromDrive } from './samsungexport';
@@ -128,7 +129,7 @@ export function helpText(): string {
     ),
     t('🎬 Roleplay: /roleplay (scenes, stories, Japanese conversation practice), /roleplay end', '🎬 บทบาทสมมติ: /roleplay (ฉาก เรื่องราว ฝึกสนทนาภาษาญี่ปุ่น), /roleplay end'),
     t('🌦️ Weather: /weather, /forecast (7 days), /weekend', '🌦️ อากาศ: /weather, /forecast (7 วัน), /weekend'),
-    t('🎭 Personality: /persona (pick one or describe your own), /name <new name>, /ttsvoice <voice>', '🎭 บุคลิก: /persona (เลือกหรือบรรยายเอง), /name <ชื่อใหม่>, /ttsvoice <เสียง>'),
+    t('🎭 Personality: /persona (pick one or describe your own), /character (my looks, birthday, likes, quirks), /name <new name>, /ttsvoice <voice>', '🎭 บุคลิก: /persona (เลือกหรือบรรยายเอง), /character (รูปลักษณ์ วันเกิด สิ่งที่ชอบ นิสัย), /name <ชื่อใหม่>, /ttsvoice <เสียง>'),
     t(
       '💰 Money: send payment slips or tell me what you spent; /budget shows the month, /budget set 20000 sets a budget, /budget scan reads your email',
       '💰 การเงิน: ส่งสลิปหรือบอกว่าใช้เงินไปกับอะไร; /budget ดูยอดเดือนนี้, /budget set 20000 ตั้งงบประมาณ, /budget scan อ่านจากอีเมล',
@@ -284,7 +285,7 @@ export function personaView(ctx: CommandContext, notice = ''): CommandReply {
       '',
       t('Tap one below, or describe your own, e.g.', 'แตะเลือกด้านล่าง หรือบรรยายบุคลิกเอง เช่น'),
       t('/persona a witty pirate captain who loves spreadsheets and calls me captain', '/persona กัปตันโจรสลัดอารมณ์ขันที่รักสเปรดชีตและเรียกฉันว่ากัปตัน'),
-      t('Rename me with /name <name>. /persona off goes back to the default.', 'เปลี่ยนชื่อฉันได้ด้วย /name <ชื่อ> และ /persona off เพื่อกลับไปเป็นแบบเริ่มต้น'),
+      t('Rename me with /name <name>. /persona off goes back to the default. My looks, birthday, likes and quirks are in /character and stay when you switch.', 'เปลี่ยนชื่อฉันได้ด้วย /name <ชื่อ> และ /persona off เพื่อกลับไปเป็นแบบเริ่มต้น รูปลักษณ์ วันเกิด สิ่งที่ชอบ และนิสัยของฉันอยู่ใน /character และไม่หายเมื่อเปลี่ยนบุคลิก'),
     ]
       .filter((l, i) => l !== '' || i > 0)
       .join('\n'),
@@ -583,6 +584,25 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         if (arg.length < 10) return { text: t(`"${arg}" isn't one of my personalities. Tap one in /persona, or describe your own in a sentence.`, `"${arg}" ไม่ใช่บุคลิกที่ฉันมี แตะเลือกใน /persona หรือบรรยายบุคลิกที่ต้องการเป็นประโยค`) };
         store.updateSettings({ personaKey: 'custom', persona: arg.slice(0, 1000), speakingStyle: undefined });
         return personaView(ctx, t('✅ Got it, that is who I am now. Say hi!\n', '✅ ได้เลย ตอนนี้ฉันเป็นแบบนั้นแล้ว ลองทักทายดูสิ!\n'));
+      }
+      case '/character': {
+        const [verb = '', sectionWord = '', ...rest] = arg.split(/\s+/);
+        const v = verb.toLowerCase();
+        const show = (prefix = '') => ({ text: prefix + formatCharacter(store.settings().character, agent.botName) });
+        if (!arg) return show();
+        if (!['add', 'set', 'remove', 'clear'].includes(v)) {
+          return show(t('Use add, set, remove or clear (see below).\n\n', 'ใช้ add, set, remove หรือ clear (ดูด้านล่าง)\n\n'));
+        }
+        const all = v === 'clear' && sectionWord.toLowerCase() === 'all';
+        const section = all ? null : findSection(sectionWord);
+        if (!all && !section) return show(t(`"${sectionWord}" isn't a section.\n\n`, `ไม่มีหมวด "${sectionWord}"\n\n`));
+        const text = rest.join(' ');
+        const edit: CharacterEdit =
+          v === 'clear' ? { action: 'clear', section: section ?? 'all' } : v === 'remove' ? { action: 'remove', section: section!, number: Number(text) } : { action: v as 'add' | 'set', section: section!, text };
+        const r = editCharacter(store.settings().character ?? {}, edit);
+        if ('error' in r) return { text: `⚠️ ${r.error}` };
+        store.updateSettings({ character: r.character });
+        return show(t('✅ Saved.\n\n', '✅ บันทึกแล้ว\n\n'));
       }
       case '/name': {
         if (!arg) return { text: t(`I'm ${agent.botName}. Rename me with /name <name>, e.g. /name Mali`, `ฉันชื่อ${agent.botName} เปลี่ยนชื่อได้ด้วย /name <ชื่อ> เช่น /name Mali`) };
