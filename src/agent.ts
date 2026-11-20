@@ -3,6 +3,7 @@ import type { DocumentInput } from './documents';
 import type { Google } from './google';
 import type { ImageInput, Provider, ToolSpec } from './llm/types';
 import { characterPrompt, isBirthday, type Character } from './character';
+import type { Pictures } from './pictures';
 import { HealthData, HealthDb } from './healthdb';
 import { t } from './i18n';
 import { HealthSync } from './healthsync';
@@ -120,7 +121,7 @@ export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: b
 
 export class Agent {
   private systemCache: { key: string; text: string } | null = null;
-  private readonly tools: ToolSpec[];
+  private tools: ToolSpec[];
   /** Samsung Health data: live from Health Sync's Drive folders (when Google Drive is connected) plus the stored history. */
   readonly health: HealthData;
   private readonly locks = new Map<string, Promise<unknown>>();
@@ -135,6 +136,14 @@ export class Agent {
   ) {
     this.health = new HealthData(new HealthDb(cfg.dataDir || null), google?.has('drive') ? new HealthSync(google) : null);
     this.tools = toolSpecs({ wanikani: !!cfg.wanikaniToken, google, maps: !!maps });
+  }
+
+  /** Pictures of the character (set once at start when a Gemini key exists). */
+  pictures: Pictures | null = null;
+
+  setPictures(p: Pictures | null) {
+    this.pictures = p;
+    this.tools = toolSpecs({ wanikani: !!this.cfg.wanikaniToken, google: this.google, maps: !!this.maps, pictures: !!p?.available });
   }
 
   // --- settings ---
@@ -368,6 +377,9 @@ export class Agent {
           readPdf: (n, pdf) => this.readPdf(n, pdf),
           extract: (instructions, data) => this.extract(instructions, data, 'money'),
           now: this.now,
+          pictures: this.pictures,
+          turnImages: input.images,
+          botName: this.botName,
         }),
       onUsage: (u) => this.recordUsage(u, kind),
     });

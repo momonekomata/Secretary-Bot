@@ -65,6 +65,8 @@ export interface Usage {
   cacheRead?: number;
   cacheWrite?: number;
   webSearches?: number;
+  /** A fixed charge on top of tokens, e.g. an estimated price per generated picture (USD). */
+  fixedUsd?: number;
 }
 
 /** Per web search: Claude web search is $10 per 1,000; Gemini Google Search grounding about $14 per 1,000 queries (free allowance not counted). */
@@ -76,6 +78,7 @@ export function costOf(u: Usage, info: ModelInfo): number {
   const cacheRead = info.cacheRead ?? info.input * 0.1;
   return (
     (u.input * info.input + (u.cacheWrite ?? 0) * info.input * 1.25 + (u.cacheRead ?? 0) * cacheRead + u.output * info.output) / 1e6 +
-    (u.webSearches ?? 0) * (info.provider === 'gemini' ? GEMINI_SEARCH_USD : CLAUDE_SEARCH_USD)
+    (u.webSearches ?? 0) * (info.provider === 'gemini' ? GEMINI_SEARCH_USD : CLAUDE_SEARCH_USD) +
+    (u.fixedUsd ?? 0)
   );
 }

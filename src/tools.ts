@@ -1,6 +1,6 @@
 import type { Config } from './config';
 import { formatEmails, formatEvents, formatTasks, type Google, type GoogleFeature } from './google';
-import type { ToolResult, ToolSpec } from './llm/types';
+import type { ImageInput, ToolResult, ToolSpec } from './llm/types';
 import { formatPlaces, TRAVEL_MODES, type Maps, type TravelMode } from './maps';
 import { ACTIVITY, bodyNumbers, formatBody, formatFoodDay, MEALS } from './health';
 import { history, type HealthData } from './healthdb';
@@ -13,6 +13,7 @@ import { budgetAlerts, CATEGORY_KEYS, findCategory, logTxn, report, scanEmail, s
 import { fetchNews, formatNews } from './news';
 import type { City, Store } from './store';
 import { formatTime, localDay, parseHHMM, REPEATS, type Repeat } from './time';
+import { ASPECTS, type Aspect, type Pictures } from './pictures';
 import { CHARACTER_SECTIONS, editCharacter, findSection, type CharacterEdit } from './character';
 import { checkDays, DEFAULT_NAG_MINUTES, DEFAULT_STOP_AT, endedLine, markDone, reminderLine } from './reminders';
 import { airQuality, forecast, formatWeather, geocode } from './weather';
@@ -31,6 +32,12 @@ export interface ToolContext {
   /** Has the AI pull structured data out of text (no tools, no chat history). */
   extract?: (instructions: string, data: string) => Promise<string>;
   now?: () => Date;
+  /** Draws pictures of the character (when a Gemini key is set). */
+  pictures?: Pictures | null;
+  /** Photos the user sent with this message (e.g. art to use as the character's look). */
+  turnImages?: ImageInput[];
+  /** The bot's name, for pictures. */
+  botName?: string;
 }
 
 const obj = (properties: Record<string, unknown>, required: string[] = Object.keys(properties)): ToolSpec['parameters'] => ({
@@ -331,6 +338,30 @@ const CHARACTER: ToolSpec = {
   ),
 };
 
+const PICTURES: ToolSpec[] = [
+  {
+    name: 'draw_picture',
+    description:
+      'Draw a picture of yourself (your character, from your character sheet) when the user asks for one: a selfie, you in an outfit or place, doing something. ' +
+      'The picture is sent with your reply, so just add a short line in character. Safe-for-work only; Google refuses anything else. Each picture costs more than a text reply: one per request unless asked for more (at most 3).',
+    parameters: obj(
+      {
+        scene: str('The scene in English: pose, outfit, place, mood, framing, e.g. "sitting by a rainy window with a cup of cocoa, cosy sweater, smiling softly".'),
+        aspect: { type: 'string', enum: [...ASPECTS], description: 'Shape: 1:1 square (default), 3:4 or 9:16 tall, 4:3 or 16:9 wide.' },
+        style: str('Only if the user asks for a different art style this time (e.g. "watercolour", "chibi"); otherwise leave out to use their default.'),
+      },
+      ['scene'],
+    ),
+  },
+  {
+    name: 'picture_reference_set',
+    description:
+      'Choose the reference portrait used to keep your look the same in every picture: "last_picture" when the user likes the last one you drew ("use this as your look"), ' +
+      '"user_photo" when they send art of you with this message, "clear" to drop it.',
+    parameters: obj({ source: { type: 'string', enum: ['last_picture', 'user_photo', 'clear'], description: 'Where the reference comes from.' } }),
+  },
+];
+
 const WANIKANI: ToolSpec = {
   name: 'get_wanikani_status',
   description: "Get the user's live WaniKani progress: level, lessons and reviews available now, upcoming reviews, and item counts by SRS stage.",
@@ -479,9 +510,9 @@ const MAPS: ToolSpec[] = [
   },
 ];
 
-export function toolSpecs(opts: { wanikani: boolean; google: Google | null; maps: boolean }): ToolSpec[] {
+export function toolSpecs(opts: { wanikani: boolean; google: Google | null; maps: boolean; pictures?: boolean }): ToolSpec[] {
   const g = opts.google;
-  return [...CORE, ...PREFERENCES, CHARACTER, VOICE_STYLE, ...MONEY, ...(g?.has('gmail') ? [MONEY_EMAIL] : []), ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : [])];
+  return [...CORE, ...PREFERENCES, CHARACTER, VOICE_STYLE, ...MONEY, ...(g?.has('gmail') ? [MONEY_EMAIL] : []), ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : []), ...(opts.pictures ? PICTURES : [])];
 }
 
 const STAGES = ['Lesson', 'Apprentice 1', 'Apprentice 2', 'Apprentice 3', 'Apprentice 4', 'Guru 1', 'Guru 2', 'Master', 'Enlightened', 'Burned'];
@@ -822,6 +853,38 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
         ctx.store.updateSettings({ character: r.character });
         const items = r.character[section] ?? [];
         return ok(`Character sheet updated. ${section}: ${items.length ? items.map((x, i) => `${i + 1}. ${x}`).join(' ') : '(empty)'}`);
+      }
+      case 'draw_picture': {
+        const pics = ctx.pictures;
+        if (!pics?.available) return fail('Pictures are not available (no Gemini key).');
+        const aspect = (ASPECTS as readonly string[]).includes(s('aspect')) ? (s('aspect') as Aspect) : undefined;
+        try {
+          const pic = await pics.draw(s('scene'), { aspect, botName: ctx.botName ?? 'me', character: ctx.store.settings().character, style: s('style') || ctx.store.settings().pictureStyle });
+          pics.queue(ctx.chatKey, pic);
+          return ok(
+            'Picture drawn; it is sent with your reply. Add a short line in character, and do not describe the picture at length.' +
+              (ctx.store.settings().character?.looks?.length ? '' : ' Your character sheet has no looks yet: suggest the user describes how you look (/character) so pictures stay consistent.') +
+              (pics.hasReference ? '' : ' There is no reference portrait yet: if the user likes this one, they can say "use this as your look".'),
+          );
+        } catch (e) {
+          return fail((e as Error).message);
+        }
+      }
+      case 'picture_reference_set': {
+        const pics = ctx.pictures;
+        if (!pics) return fail('Pictures are not available.');
+        const src = s('source');
+        if (src === 'clear') {
+          pics.clearReference();
+          return ok('Reference portrait removed; pictures follow the character sheet only.');
+        }
+        if (src === 'user_photo') {
+          const img = ctx.turnImages?.[0];
+          if (!img) return fail('The user did not send a photo with this message.');
+          pics.setReference(img);
+          return ok('Saved the photo the user sent as your reference portrait.');
+        }
+        return pics.setReference('last') ? ok('Saved your last picture as the reference portrait.') : fail('There is no picture yet to use; draw one first.');
       }
       case 'roleplay_start':
         if (!s('scenario')) return fail('Describe the scene.');

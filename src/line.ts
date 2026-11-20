@@ -188,9 +188,18 @@ export class Line implements Channel {
           text = `${t('🎧 Voice samples play on Telegram. You can still pick a voice here:', '🎧 ตัวอย่างเสียงเล่นได้ใน Telegram แต่เลือกเสียงที่นี่ได้:')}`;
           reply = { ...reply, buttons: reply.samples.footer.buttons };
         }
+        const images: object[] = [];
+        for (const p of reply.pictures ?? []) {
+          if (!this.files?.enabled) {
+            text = [text, t('🎨 Pictures on LINE need PUBLIC_URL (see SETUP-GUIDE.md); they show on Telegram.', '🎨 การส่งภาพใน LINE ต้องตั้ง PUBLIC_URL ก่อน (ดู SETUP-GUIDE.md) ใน Telegram ดูได้เลย')].filter(Boolean).join('\n\n');
+            break;
+          }
+          const url = this.files.add(p.mimeType.includes('jpeg') ? 'picture.jpg' : 'picture.png', p.mimeType, p.data, 7 * 24 * 3600_000);
+          images.push({ type: 'image', originalContentUrl: url, previewImageUrl: url });
+        }
         const spoken = reply.speak ? await this.audioMessage(reply.speak) : null;
         if (spoken?.error) text = [text || reply.speak, spoken.error].filter(Boolean).join('\n\n');
-        await this.respond(ev.replyToken, chatId, text, reply.buttons, spoken?.audio ? [spoken.audio] : []);
+        await this.respond(ev.replyToken, chatId, text, reply.buttons, [...images, ...(spoken?.audio ? [spoken.audio] : [])]);
       }
     } catch (e) {
       this.log('LINE handler error:', e);

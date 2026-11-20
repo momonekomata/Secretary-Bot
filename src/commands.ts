@@ -18,6 +18,8 @@ import { buildExport } from './export';
 import { formatHealthConnectReport, importHealthConnect } from './healthconnect';
 import { formatReminders, markDone } from './reminders';
 import { editCharacter, findSection, formatCharacter, type CharacterEdit } from './character';
+import type { Picture } from './pictures';
+import { UserFacingError } from './documents';
 import { foodLine } from './fooddb';
 import { budgetAlerts, CATEGORY_KEYS, findCategory, report, scanEmail, scanSummary, txnLine } from './money';
 import { formatReport, healthImport, importFromDrive } from './samsungexport';
@@ -35,6 +37,8 @@ export interface CommandReply {
   text: string;
   buttons?: Button[][];
   file?: { name: string; data: Buffer };
+  /** Pictures to send (the buttons go under the last one where the platform allows). */
+  pictures?: Picture[];
   /** Text to also send as a spoken voice message. */
   speak?: string;
   /** Voice samples to send one after another (one voice message each), then `footer` with its buttons. */
@@ -106,7 +110,7 @@ export interface CommandContext {
 }
 
 /** Commands that call an AI or an outside API: channels show "typing…" while they run. */
-export const SLOW_COMMANDS = new Set(['/review', '/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say', '/budget', '/money', '/voices', '/voicestyle', '/style', '/healthconnect']);
+export const SLOW_COMMANDS = new Set(['/review', '/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say', '/budget', '/money', '/voices', '/voicestyle', '/style', '/healthconnect', '/draw', '/picture']);
 
 /** The /help text, in the current language. */
 export function helpText(): string {
@@ -129,7 +133,7 @@ export function helpText(): string {
     ),
     t('🎬 Roleplay: /roleplay (scenes, stories, Japanese conversation practice), /roleplay end', '🎬 บทบาทสมมติ: /roleplay (ฉาก เรื่องราว ฝึกสนทนาภาษาญี่ปุ่น), /roleplay end'),
     t('🌦️ Weather: /weather, /forecast (7 days), /weekend', '🌦️ อากาศ: /weather, /forecast (7 วัน), /weekend'),
-    t('🎭 Personality: /persona (pick one or describe your own), /character (my looks, birthday, likes, quirks), /name <new name>, /ttsvoice <voice>', '🎭 บุคลิก: /persona (เลือกหรือบรรยายเอง), /character (รูปลักษณ์ วันเกิด สิ่งที่ชอบ นิสัย), /name <ชื่อใหม่>, /ttsvoice <เสียง>'),
+    t('🎭 Personality: /persona (pick one or describe your own), /character (my looks, birthday, likes, quirks), /draw (a picture of me), /name <new name>, /ttsvoice <voice>', '🎭 บุคลิก: /persona (เลือกหรือบรรยายเอง), /character (รูปลักษณ์ วันเกิด สิ่งที่ชอบ นิสัย), /draw (วาดภาพฉัน), /name <ชื่อใหม่>, /ttsvoice <เสียง>'),
     t(
       '💰 Money: send payment slips or tell me what you spent; /budget shows the month, /budget set 20000 sets a budget, /budget scan reads your email',
       '💰 การเงิน: ส่งสลิปหรือบอกว่าใช้เงินไปกับอะไร; /budget ดูยอดเดือนนี้, /budget set 20000 ตั้งงบประมาณ, /budget scan อ่านจากอีเมล',
@@ -584,6 +588,54 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         if (arg.length < 10) return { text: t(`"${arg}" isn't one of my personalities. Tap one in /persona, or describe your own in a sentence.`, `"${arg}" ไม่ใช่บุคลิกที่ฉันมี แตะเลือกใน /persona หรือบรรยายบุคลิกที่ต้องการเป็นประโยค`) };
         store.updateSettings({ personaKey: 'custom', persona: arg.slice(0, 1000), speakingStyle: undefined });
         return personaView(ctx, t('✅ Got it, that is who I am now. Say hi!\n', '✅ ได้เลย ตอนนี้ฉันเป็นแบบนั้นแล้ว ลองทักทายดูสิ!\n'));
+      }
+      case '/draw':
+      case '/picture': {
+        const pics = agent.pictures;
+        if (!pics?.available) return { text: t('🎨 Pictures need a Gemini API key (GEMINI_API_KEY).', '🎨 การวาดภาพต้องใช้คีย์ API ของ Gemini (GEMINI_API_KEY)') };
+        const [first = '', ...more] = arg.split(/\s+/);
+        const restText = more.join(' ').trim();
+        const word = first.toLowerCase();
+        if (word === 'style') {
+          if (!restText) {
+            const style = store.settings().pictureStyle;
+            return { text: style ? t(`🎨 Picture style: ${style}\nChange with /draw style <style>, or /draw style clear.`, `🎨 สไตล์ภาพ: ${style}\nเปลี่ยนด้วย /draw style <สไตล์> หรือ /draw style clear`) : t('🎨 No picture style set (clean, colourful anime). Set one with /draw style watercolour, soft pastel colours', '🎨 ยังไม่ได้ตั้งสไตล์ภาพ (อนิเมะสีสดใส) ตั้งได้ด้วย /draw style watercolour, soft pastel colours') };
+          }
+          const clear = ['clear', 'off', 'reset', 'none'].includes(restText.toLowerCase());
+          store.updateSettings({ pictureStyle: clear ? undefined : restText.slice(0, 300) });
+          return { text: clear ? t('🎨 Picture style cleared.', '🎨 ล้างสไตล์ภาพแล้ว') : t(`🎨 Pictures will be drawn as: ${restText.slice(0, 300)}`, `🎨 ต่อไปจะวาดภาพแบบ: ${restText.slice(0, 300)}`) };
+        }
+        if (word === 'look') {
+          if (['clear', 'off', 'reset', 'none'].includes(restText.toLowerCase())) {
+            pics.clearReference();
+            return { text: t('🎨 Reference portrait removed. Pictures follow the character sheet only.', '🎨 ลบภาพต้นแบบแล้ว ต่อไปจะวาดตามโปรไฟล์ตัวละครอย่างเดียว') };
+          }
+          return pics.setReference('last')
+            ? { text: t('⭐ Saved: that picture is now my look. I\'ll keep the same face in every picture.', '⭐ บันทึกแล้ว: ภาพนั้นคือลุคของฉัน ต่อไปจะวาดหน้าเดิมทุกภาพ') }
+            : { text: t('🎨 There is no picture yet. Draw one with /draw <scene> first.', '🎨 ยังไม่มีภาพ วาดก่อนด้วย /draw <ฉาก>') };
+        }
+        if (!arg) {
+          const s = store.settings();
+          return {
+            text: [
+              t('🎨 I can draw pictures of myself. Try:', '🎨 ฉันวาดภาพตัวเองได้ ลองดู:'),
+              t('/draw a selfie at the beach at sunset', '/draw เซลฟี่ที่ชายหาดตอนพระอาทิตย์ตก'),
+              t('or just ask in chat: "send me a picture of you in a raincoat"', 'หรือขอในแชทก็ได้: "ส่งรูปตอนใส่เสื้อกันฝนมาหน่อย"'),
+              '',
+              t(`Looks from /character: ${s.character?.looks?.length ? 'yes' : 'none yet (add them so I look the same every time)'}`, `รูปลักษณ์จาก /character: ${s.character?.looks?.length ? 'มีแล้ว' : 'ยังไม่มี (เพิ่มไว้ ภาพจะได้ออกมาเหมือนเดิมทุกครั้ง)'}`),
+              t(`Reference portrait: ${pics.hasReference ? 'yes' : 'none'} (tap ⭐ under a picture you like, or /draw look)`, `ภาพต้นแบบ: ${pics.hasReference ? 'มีแล้ว' : 'ยังไม่มี'} (แตะ ⭐ ใต้ภาพที่ชอบ หรือ /draw look)`),
+              t(`Style: ${s.pictureStyle || 'clean, colourful anime'} (/draw style <style>)`, `สไตล์: ${s.pictureStyle || 'อนิเมะสีสดใส'} (/draw style <สไตล์>)`),
+              t("Google's safety filter applies: safe-for-work pictures only.", 'ตัวกรองของ Google ใช้กับทุกภาพ: วาดได้เฉพาะภาพที่เหมาะสมเท่านั้น'),
+            ].join('\n'),
+          };
+        }
+        try {
+          const pic = await pics.draw(arg, { botName: agent.botName, character: store.settings().character, style: store.settings().pictureStyle });
+          return { text: pic.caption.slice(0, 900), pictures: [pic], buttons: [[{ label: t('⭐ Use as my look', '⭐ ใช้เป็นลุคของฉัน'), command: '/draw look' }]] };
+        } catch (e) {
+          if (e instanceof UserFacingError) return { text: e.message };
+          throw e;
+        }
       }
       case '/character': {
         const [verb = '', sectionWord = '', ...rest] = arg.split(/\s+/);
