@@ -142,6 +142,7 @@ It remembers the recent conversation. `/reset` forgets the conversation but keep
 | `/name <name>` | Rename the bot, e.g. `/name Mali` |
 | `/prefs` | Your standing preferences |
 | `/prefs add <text>` / `/prefs remove <n>` / `/prefs clear` | Change them |
+| `/character` | The bot's looks, birthday, likes, dislikes and quirks; `/character add likes …` edits it |
 | `/roleplay` | Pick a scene, or `/roleplay <description>`; `/roleplay end` stops |
 
 ### Voice
@@ -397,6 +398,21 @@ the bot reads the newest export every night at the cleanup time (03:00) and fill
 You can also describe your own: `/persona a cheerful Thai older sister who reminds me to drink water and calls me น้อง`.
 
 `/name Mali` renames the bot. The Telegram chat title is set separately, with `/setname` at @BotFather.
+
+### Character sheet: looks, birthday, likes, quirks
+On top of its personality, the bot can have a **character sheet**: facts about itself that stay the same whichever personality you pick.
+It has sections for looks, birthday, likes, dislikes, quirks, habits, how it talks (`speech`), backstory and anything else (`other`).
+- Just tell it: "you have fluffy orange hair and a curled tail", "your birthday is 3 March", "add that you're scared of thunder".
+  It also saves details it makes up about itself in chat, so it stays consistent.
+- Or use the command:
+  - `/character` shows the sheet, numbered.
+  - `/character add likes sweet potatoes`
+  - `/character remove likes 2`
+  - `/character set looks fluffy orange hair, a red collar with a bell` (replaces that section)
+  - `/character set birthday 3 March` (also `03-03` or `3 มี.ค.`)
+  - `/character clear quirks`, or `/character clear all`
+- Up to 4,000 characters in all (400 per item). It's part of every message to the AI, so a longer sheet costs a little more per reply.
+- **Birthday:** on that day it knows it's its birthday, and right after the morning briefing it sends you a message about it, in character.
 
 ### 13.2 Standing preferences
 Rules that apply to every reply, in every personality and roleplay:

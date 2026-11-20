@@ -2,6 +2,7 @@ import type { Config, Effort } from './config';
 import type { DocumentInput } from './documents';
 import type { Google } from './google';
 import type { ImageInput, Provider, ToolSpec } from './llm/types';
+import { characterPrompt, isBirthday, type Character } from './character';
 import { HealthData, HealthDb } from './healthdb';
 import { t } from './i18n';
 import { HealthSync } from './healthsync';
@@ -66,13 +67,14 @@ export function effectiveLimits(billing: Config['billing'], settings: Settings):
   return out;
 }
 
-export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: boolean, personality = '', preferences: string[] = []): string {
+export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: boolean, personality = '', preferences: string[] = [], character?: Character): string {
   return [
     `You are ${cfg.botName}, the user's personal secretary and news curator, living in their Telegram and LINE chats.`,
     personality
       ? `Your personality: ${personality}\nStay in character in your tone, wording and small touches, in every language you write. ` +
         'Personality never outweighs accuracy, honesty, safety, or what the user actually asked for, and keep replies just as short.'
       : '',
+    characterPrompt(character),
     'You help with planning, scheduling, email, research, writing and translation, and keep the user up to date on news they care about. ' +
       "You are also the user's Japanese study companion: they study kanji with WaniKani and grammar with Bunpro.",
     'Reply in the language the user writes in (often Thai, English, or Japanese), unless their standing preferences below say otherwise. When you use Japanese words for a learner, add the reading in hiragana and a short gloss the first time.',
@@ -145,9 +147,9 @@ export class Agent {
   private get system(): string {
     const s = this.store.settings();
     const prefs = s.preferences ?? [];
-    const key = `${this.botName}\u0000${s.persona ?? ''}\u0000${prefs.join('\u0001')}`;
+    const key = `${this.botName}\u0000${s.persona ?? ''}\u0000${prefs.join('\u0001')}\u0000${JSON.stringify(s.character ?? {})}`;
     if (this.systemCache?.key !== key) {
-      this.systemCache = { key, text: systemPrompt({ botName: this.botName, persona: this.cfg.persona }, !!this.google, s.persona ?? '', prefs) };
+      this.systemCache = { key, text: systemPrompt({ botName: this.botName, persona: this.cfg.persona }, !!this.google, s.persona ?? '', prefs, s.character) };
     }
     return this.systemCache.text;
   }
@@ -312,6 +314,9 @@ export class Agent {
       userName ? `The user's display name: ${userName}.` : '',
       city ? `The user's home city / last shared location: ${city.name}${city.country ? `, ${city.country}` : ''}.` : '',
       this.roleplayNote(),
+      isBirthday(this.store.settings().character, this.now(), this.cfg.timezone)
+        ? "Today is your birthday (from your character sheet)! You may mention it once, in character, if it fits; don't make every reply about it."
+        : '',
       this.foodNote(chatKey),
       mems.length ? `What you remember about the user:\n${mems.map((m) => `#${m.id} ${m.text}`).join('\n')}` : 'You have no saved memories about this user yet.',
     ]
