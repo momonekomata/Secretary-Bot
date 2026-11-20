@@ -117,6 +117,10 @@ export const config = {
   wanikaniToken: process.env.WANIKANI_TOKEN ?? '',
   /** Google Maps Platform key (Places API (New) + Routes API). */
   mapsKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
+  /** Gemini image model for /draw; empty picks the best one the key can use. */
+  imageModel: process.env.IMAGE_MODEL ?? '',
+  /** Estimated price of one picture (USD), counted in the daily limits. Check Google's price list for the model in use. */
+  imagePriceUsd: Number(process.env.IMAGE_PRICE_USD ?? 0.04),
   /** Folder (inside the container) where Android's daily Health Connect export (.zip) lands; see docker-compose.yml. */
   healthConnectDir: process.env.HEALTH_CONNECT_DIR ?? '/healthconnect',
   /** USDA FoodData Central key (free); empty uses USDA's shared DEMO_KEY, which has a low hourly limit. */

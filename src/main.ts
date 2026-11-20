@@ -16,6 +16,7 @@ import { JapaneseDaily } from './japanese';
 import { Reviews } from './review';
 import { Maps } from './maps';
 import { modelInfo } from './models';
+import { Pictures } from './pictures';
 import { Scheduler } from './scheduler';
 import { Store } from './store';
 import { Telegram } from './telegram';
@@ -158,6 +159,24 @@ async function status(): Promise<string> {
 // Voice (speech and voice-note transcription) uses the v1beta API, which has the speech settings.
 const studioVoice = config.geminiKey ? geminiVoiceGenerate(config.geminiKey) : null;
 const voiceGenerate = vertex ? vertex.generate(studioVoice) : studioVoice;
+// Pictures of the character: a Gemini image model on the v1beta API (Vertex when set up, like voice).
+const pictures = new Pictures({
+  generate: voiceGenerate,
+  listModels: async () => {
+    if (!config.geminiKey) return [];
+    const out: { name: string; actions: string[] }[] = [];
+    const pager = await new GoogleGenAI({ apiKey: config.geminiKey, apiVersion: 'v1beta' }).models.list();
+    for await (const m of pager) out.push({ name: m.name ?? '', actions: m.supportedActions ?? [] });
+    return out;
+  },
+  store,
+  dataDir: config.dataDir,
+  model: config.imageModel,
+  priceUsd: config.imagePriceUsd,
+  guard: () => agent.checkBudget('gemini'),
+  onUsage: (u) => agent.recordUsage(u, 'picture'),
+});
+agent.setPictures(pictures.available ? pictures : null);
 const secretary = new Secretary(config, store, agent, briefings, voiceGenerate, status, japanese, reviews);
 const channels = new Channels();
 const telegram = config.telegram.token ? new Telegram(config.telegram, secretary) : null;

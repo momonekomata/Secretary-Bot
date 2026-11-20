@@ -149,7 +149,12 @@ export class Secretary {
   /** Returns the reply to send, or null to stay silent. */
   async handle(m: IncomingMessage): Promise<CommandReply | null> {
     try {
-      return await this.route(m);
+      const reply = await this.route(m);
+      // Pictures the AI drew during this reply go out with it.
+      const drawn = this.agent.pictures?.take(m.chatKey) ?? [];
+      if (!drawn.length) return reply;
+      const base = reply ?? { text: '' };
+      return { ...base, pictures: [...(base.pictures ?? []), ...drawn], buttons: base.buttons ?? [[{ label: t('⭐ Use as my look', '⭐ ใช้เป็นลุคของฉัน'), command: '/draw look' }]] };
     } catch (e) {
       // A spending cap is an answer, not an error.
       if (e instanceof BudgetExceeded) return { text: e.message };

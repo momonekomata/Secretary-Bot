@@ -143,6 +143,8 @@ export interface Settings {
   preferences?: string[];
   /** The bot's character sheet (looks, birthday, likes…), kept across personalities. */
   character?: Character;
+  /** Default art style for pictures of the character (/draw style). */
+  pictureStyle?: string;
   /** Gemini prebuilt voice for spoken replies, and how to speak. */
   ttsVoice?: string;
   /** A different voice per language (overrides ttsVoice for that language), e.g. { th: 'Leda', ja: 'Autonoe' }. */

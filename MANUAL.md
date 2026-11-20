@@ -143,6 +143,7 @@ It remembers the recent conversation. `/reset` forgets the conversation but keep
 | `/prefs` | Your standing preferences |
 | `/prefs add <text>` / `/prefs remove <n>` / `/prefs clear` | Change them |
 | `/character` | The bot's looks, birthday, likes, dislikes and quirks; `/character add likes …` edits it |
+| `/draw <scene>` | A picture of the bot's character; `/draw style …`, `/draw look` |
 | `/roleplay` | Pick a scene, or `/roleplay <description>`; `/roleplay end` stops |
 
 ### Voice
@@ -413,6 +414,20 @@ It has sections for looks, birthday, likes, dislikes, quirks, habits, how it tal
   - `/character clear quirks`, or `/character clear all`
 - Up to 4,000 characters in all (400 per item). It's part of every message to the AI, so a longer sheet costs a little more per reply.
 - **Birthday:** on that day it knows it's its birthday, and right after the morning briefing it sends you a message about it, in character.
+
+### Pictures of the character
+The bot can draw itself, from the looks in its character sheet (needs the Gemini key).
+- Ask in chat ("send me a selfie at the beach", "draw yourself in a raincoat"), or `/draw a selfie at the beach at sunset`.
+- **Same face every time:** tap **⭐ Use as my look** under a picture you like (or `/draw look`). That picture becomes the reference
+  portrait sent with every new one. You can also send your own art of the character and say "use this as your look".
+  `/draw look clear` removes it.
+- **Style:** `/draw style soft pastel watercolour` sets the default (otherwise clean, colourful anime); `/draw style clear` resets it.
+  You can also ask for a different style for one picture ("draw it chibi-style").
+- **Safe-for-work only:** Google's image filter applies and the bot can't get around it; a refused picture gets a short note instead.
+- **Cost:** each picture is counted at an estimated $0.04 (`IMAGE_PRICE_USD` in `.env`; check Google's price list for the model in use)
+  plus its tokens, and counts toward your daily `/limit`. `/stats` shows them as "picture".
+- The image model is picked automatically from the ones your Gemini key can use; set `IMAGE_MODEL` in `.env` to choose one.
+- On LINE, pictures need `PUBLIC_URL` (like voice replies).
 
 ### 13.2 Standing preferences
 Rules that apply to every reply, in every personality and roleplay:

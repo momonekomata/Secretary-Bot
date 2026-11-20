@@ -114,6 +114,19 @@ export class Telegram implements Channel {
     if (!json.ok) throw new Error(`Telegram sendDocument: ${json.description ?? res.status}`);
   }
 
+  /** Sends a picture, with buttons under it if given. */
+  async sendPhoto(chatId: string, data: Buffer, mimeType: string, caption = '', buttons?: Button[][]) {
+    const form = new FormData();
+    form.append('chat_id', chatId);
+    if (caption) form.append('caption', caption.slice(0, 1000));
+    const markup = inlineKeyboard(buttons);
+    if (markup) form.append('reply_markup', JSON.stringify(markup));
+    form.append('photo', new Blob([data], { type: mimeType }), mimeType.includes('jpeg') ? 'picture.jpg' : 'picture.png');
+    const res = await fetch(`${this.api}/sendPhoto`, { method: 'POST', body: form });
+    const json = (await res.json()) as { ok: boolean; description?: string };
+    if (!json.ok) throw new Error(`Telegram sendPhoto: ${json.description ?? res.status}`);
+  }
+
   /** Sends an Ogg/Opus voice bubble. */
   async sendVoice(chatId: string, ogg: Buffer, durationMs: number, caption = '') {
     const form = new FormData();
@@ -127,7 +140,15 @@ export class Telegram implements Channel {
   }
 
   private async sendReply(chatId: string, reply: CommandReply) {
-    if (reply.file) await this.sendFile(chatId, reply.file.name, reply.file.data, reply.text);
+    if (reply.pictures?.length) {
+      // A short text goes on the picture as its caption; a long one is sent first. Buttons go under the last picture.
+      const short = reply.text.length <= 1000 && reply.pictures.length === 1;
+      if (reply.text && !short) await this.send(chatId, reply.text);
+      for (const [i, p] of reply.pictures.entries()) {
+        const last = i === reply.pictures.length - 1;
+        await this.sendPhoto(chatId, p.data, p.mimeType, short ? reply.text : '', last ? reply.buttons : undefined);
+      }
+    } else if (reply.file) await this.sendFile(chatId, reply.file.name, reply.file.data, reply.text);
     else if (reply.text) await this.send(chatId, reply.text, reply.samples ? undefined : reply.buttons);
     await this.sendSpeech(chatId, reply);
     if (reply.samples) await this.sendSamples(chatId, reply.samples);
