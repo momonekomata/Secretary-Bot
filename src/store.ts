@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { Effort } from './config';
 import type { ReviewSession } from './review';
 import type { Character } from './character';
+import type { Lesson } from './lessons';
 import type { Repeat } from './time';
 
 /** One remembered turn. Only plain text is kept between turns (see agent.ts for why). */
@@ -145,6 +146,8 @@ export interface Settings {
   character?: Character;
   /** Default art style for pictures of the character (/draw style). */
   pictureStyle?: string;
+  /** Daily quiz time on lessons due ("HH:MM"), set with /quiz daily; unset = no daily quiz. */
+  quizTime?: string;
   /** Gemini prebuilt voice for spoken replies, and how to speak. */
   ttsVoice?: string;
   /** A different voice per language (overrides ttsVoice for that language), e.g. { th: 'Leda', ja: 'Autonoe' }. */
@@ -184,6 +187,8 @@ interface Data {
   history: Record<string, Turn[]>;
   /** Memories, todos: per person, keyed by chat. */
   memories: Record<string, Memory[]>;
+  /** Lessons taught, per chat (what was taught, and the quiz schedule). */
+  lessons: Record<string, Lesson[]>;
   todos: Record<string, Todo[]>;
   reminders: Reminder[];
   /** Cancelled or finished reminders that have a done record, so the record isn't lost. */
@@ -211,6 +216,7 @@ const empty = (): Data => ({
   nextId: 1,
   history: {},
   memories: {},
+  lessons: {},
   todos: {},
   reminders: [],
   endedReminders: [],
@@ -278,6 +284,24 @@ export class Store {
   clearHistory(chatKey: string) {
     delete this.data.history[chatKey];
     this.save();
+  }
+
+  // --- lessons ---
+
+  lessons(chatKey: string): Lesson[] {
+    return this.data.lessons[chatKey] ?? [];
+  }
+
+  setLessons(chatKey: string, lessons: Lesson[]) {
+    this.data.lessons[chatKey] = lessons;
+    this.save();
+  }
+
+  /** A fresh id (shared counter with memories, reminders and to-dos). */
+  newId(): number {
+    const id = this.data.nextId++;
+    this.save();
+    return id;
   }
 
   // --- memories ---

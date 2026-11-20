@@ -11,7 +11,7 @@ import { findPersona, PERSONAS } from './personas';
 import { bodyNumbers, formatBody, formatFoodDay } from './health';
 import { JLPT_LEVELS, type JapaneseDaily } from './japanese';
 import type { Reviews } from './review';
-import { formatTime, localDay } from './time';
+import { formatTime, localDay, parseHHMM } from './time';
 import { weatherText } from './tools';
 import { formatDay as formatWatchDay } from './healthsync';
 import { buildExport } from './export';
@@ -19,6 +19,7 @@ import { formatHealthConnectReport, importHealthConnect } from './healthconnect'
 import { formatReminders, markDone } from './reminders';
 import { editCharacter, findSection, formatCharacter, type CharacterEdit } from './character';
 import type { Picture } from './pictures';
+import { dueLessons, findLessons, formatLessons, quizPrompt, today as lessonDay } from './lessons';
 import { UserFacingError } from './documents';
 import { foodLine } from './fooddb';
 import { budgetAlerts, CATEGORY_KEYS, findCategory, report, scanEmail, scanSummary, txnLine } from './money';
@@ -110,7 +111,7 @@ export interface CommandContext {
 }
 
 /** Commands that call an AI or an outside API: channels show "typing…" while they run. */
-export const SLOW_COMMANDS = new Set(['/review', '/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say', '/budget', '/money', '/voices', '/voicestyle', '/style', '/healthconnect', '/draw', '/picture']);
+export const SLOW_COMMANDS = new Set(['/review', '/health', '/healthimport', '/kanji', '/word', '/forecast', '/roleplay', '/news', '/brief', '/weather', '/weekend', '/status', '/calendar', '/inbox', '/mail', '/drive', '/gtask', '/gdone', '/setcity', '/places', '/say', '/budget', '/money', '/voices', '/voicestyle', '/style', '/healthconnect', '/draw', '/picture', '/quiz']);
 
 /** The /help text, in the current language. */
 export function helpText(): string {
@@ -124,8 +125,8 @@ export function helpText(): string {
     t('📍 Places: share your location, /places <what>, /setcity <city>', '📍 สถานที่: แชร์ตำแหน่งของคุณ, /places <สิ่งที่หา>, /setcity <เมือง>'),
     t('🔊 Voice: send a voice note; /voice off|notes|always, /say <text>', '🔊 เสียง: ส่งข้อความเสียงมาได้เลย; /voice off|notes|always, /say <ข้อความ>'),
     t(
-      '🇯🇵 Japanese: /review (your WaniKani reviews, right here), /kanji, /word (of the day, daily at 12:00; they count as reviews when due), /jlpt N4',
-      '🇯🇵 ภาษาญี่ปุ่น: /review (ทำรีวิว WaniKani ที่นี่เลย), /kanji, /word (คันจิและคำศัพท์ประจำวัน ส่งทุกวันตอน 12:00 และนับเป็นรีวิวเมื่อถึงกำหนด), /jlpt N4',
+      '🇯🇵 Japanese: /review (your WaniKani reviews, right here), /kanji, /word (of the day, daily at 12:00; they count as reviews when due), /jlpt N4, /lessons (what I taught you), /quiz (on past lessons; /quiz daily 20:00)',
+      '🇯🇵 ภาษาญี่ปุ่น: /review (ทำรีวิว WaniKani ที่นี่เลย), /kanji, /word (คันจิและคำศัพท์ประจำวัน ส่งทุกวันตอน 12:00 และนับเป็นรีวิวเมื่อถึงกำหนด), /jlpt N4, /lessons (บทเรียนที่ฉันสอน), /quiz (ทดสอบบทเรียนเก่า; /quiz daily 20:00)',
     ),
     t(
       '🍽️ Health: tell me or send a photo of what you ate; /food, /bmi, /profile, /weight 65.5, /health (watch data), /healthimport (Samsung Health export from Drive), /healthconnect (Health Connect export on the NAS)',
@@ -588,6 +589,59 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
         if (arg.length < 10) return { text: t(`"${arg}" isn't one of my personalities. Tap one in /persona, or describe your own in a sentence.`, `"${arg}" ไม่ใช่บุคลิกที่ฉันมี แตะเลือกใน /persona หรือบรรยายบุคลิกที่ต้องการเป็นประโยค`) };
         store.updateSettings({ personaKey: 'custom', persona: arg.slice(0, 1000), speakingStyle: undefined });
         return personaView(ctx, t('✅ Got it, that is who I am now. Say hi!\n', '✅ ได้เลย ตอนนี้ฉันเป็นแบบนั้นแล้ว ลองทักทายดูสิ!\n'));
+      }
+      case '/lessons': {
+        const lessons = store.lessons(chatKey);
+        const day = lessonDay(now, cfg.timezone);
+        if (!arg) return { text: formatLessons(lessons, day) };
+        const [w, id] = arg.split(/\s+/);
+        if (['forget', 'delete', 'remove'].includes(w.toLowerCase())) {
+          const n = Number((id ?? '').replace('#', ''));
+          if (!lessons.some((l) => l.id === n)) return { text: t(`No lesson #${id ?? ''}. See /lessons.`, `ไม่มีบทเรียน #${id ?? ''} ดูได้ที่ /lessons`) };
+          store.setLessons(chatKey, lessons.filter((l) => l.id !== n));
+          return { text: t(`🗑️ Deleted lesson #${n}.`, `🗑️ ลบบทเรียน #${n} แล้ว`) };
+        }
+        const found = /^#?\d+$/.test(arg) ? lessons.filter((l) => l.id === Number(arg.replace('#', ''))) : findLessons(lessons, arg).slice(0, 3);
+        if (!found.length) return { text: t(`📚 No lesson about "${arg}" yet. Ask me to teach it!`, `📚 ยังไม่มีบทเรียนเรื่อง "${arg}" ขอให้ฉันสอนได้เลย!`) };
+        return {
+          text: found
+            .map((l) =>
+              [
+                `📚 #${l.id} ${l.topic}`,
+                t(`Taught ${l.taught.join(', ')} · you asked: "${l.asked}"`, `สอนเมื่อ ${l.taught.join(', ')} · คุณถาม: "${l.asked}"`),
+                l.summary,
+                ...l.points.map((p) => `• ${p}`),
+                ...(l.examples.length ? [t('Examples:', 'ตัวอย่าง:'), ...l.examples.map((e) => `  ${e}`)] : []),
+                t(`Next quiz: ${l.due}`, `ทดสอบครั้งถัดไป: ${l.due}`),
+              ].join('\n'),
+            )
+            .join('\n\n'),
+          buttons: [found.slice(0, 3).map((l) => ({ label: t(`📝 Quiz #${l.id}`, `📝 ทดสอบ #${l.id}`), command: `/quiz #${l.id}` }))],
+        };
+      }
+      case '/quiz': {
+        const [w = '', time = ''] = arg.split(/\s+/);
+        if (w.toLowerCase() === 'daily') {
+          if (!time) {
+            const at = store.settings().quizTime;
+            return { text: at ? t(`📝 Daily quiz at ${at} (when lessons are due). /quiz daily off stops it.`, `📝 ทดสอบทุกวันเวลา ${at} (เมื่อมีบทที่ถึงเวลา) /quiz daily off เพื่อหยุด`) : t('📝 No daily quiz. Set one with /quiz daily 20:00', '📝 ยังไม่ได้ตั้งการทดสอบประจำวัน ตั้งได้ด้วย /quiz daily 20:00') };
+          }
+          if (['off', 'stop', 'none'].includes(time.toLowerCase())) {
+            store.updateSettings({ quizTime: undefined });
+            return { text: t('📝 Daily quiz off.', '📝 ปิดการทดสอบประจำวันแล้ว') };
+          }
+          const mins = parseHHMM(time);
+          if (mins === null) return { text: t('Use a time like /quiz daily 20:00', 'ใช้เวลาแบบนี้ /quiz daily 20:00') };
+          const at = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+          store.updateSettings({ quizTime: at });
+          return { text: t(`📝 Every day at ${at} I'll quiz you on the lessons that are due (nothing is sent on days with none due).`, `📝 ทุกวันเวลา ${at} ฉันจะทดสอบบทเรียนที่ถึงเวลา (วันไหนไม่มีบทที่ถึงเวลาจะไม่ส่ง)`) };
+        }
+        const lessons = store.lessons(chatKey);
+        if (!lessons.length) return { text: formatLessons(lessons, lessonDay(now, cfg.timezone)) };
+        const byId = /^#\d+$/.test(arg) ? lessons.filter((l) => l.id === Number(arg.slice(1))) : null;
+        const prompt = byId ? quizPrompt(byId, byId) : quizPrompt(dueLessons(lessons, lessonDay(now, cfg.timezone)), lessons, arg);
+        if (!prompt) return { text: t(`📚 No lesson about "${arg}" yet. See /lessons.`, `📚 ยังไม่มีบทเรียนเรื่อง "${arg}" ดูได้ที่ /lessons`) };
+        return { text: await agent.reply({ chatKey, text: arg ? `/quiz ${arg}` : '/quiz', fileText: prompt, kind: 'quiz' }) };
       }
       case '/draw':
       case '/picture': {

@@ -13,6 +13,7 @@ import { budgetAlerts, CATEGORY_KEYS, findCategory, logTxn, report, scanEmail, s
 import { fetchNews, formatNews } from './news';
 import type { City, Store } from './store';
 import { formatTime, localDay, parseHHMM, REPEATS, type Repeat } from './time';
+import { findLessons, lessonDetail, recordQuiz, saveLesson, today as lessonDay } from './lessons';
 import { ASPECTS, type Aspect, type Pictures } from './pictures';
 import { CHARACTER_SECTIONS, editCharacter, findSection, type CharacterEdit } from './character';
 import { checkDays, DEFAULT_NAG_MINUTES, DEFAULT_STOP_AT, endedLine, markDone, reminderLine } from './reminders';
@@ -338,6 +339,42 @@ const CHARACTER: ToolSpec = {
   ),
 };
 
+const LESSONS: ToolSpec[] = [
+  {
+    name: 'lesson_find',
+    description:
+      'Look up lessons you already taught this user (by word, grammar point or topic) before teaching something, so you build on them instead of repeating them. Returns the full lessons found.',
+    parameters: obj({ query: str('What to look for, e.g. "我慢する", "gaman", "te-form", "keigo".') }),
+  },
+  {
+    name: 'lesson_save',
+    description:
+      'Save a lesson right after you teach one (the user asked you to teach or explain a word, grammar point or skill, and you did). The same topic again adds to the saved lesson. ' +
+      'Saved lessons are quizzed later with spaced repetition. Not for quick one-word translations or small talk.',
+    parameters: obj(
+      {
+        topic: str('Short title, e.g. "我慢する (がまんする, gaman suru): to endure / hold back". Same topic as an earlier lesson = same title.'),
+        subject: str('e.g. "Japanese grammar", "Japanese vocabulary", "Thai cooking".'),
+        asked: str("What the user asked, in their words (short)."),
+        summary: str('What you taught, in 2-4 sentences.'),
+        points: strList('The key points taught, one per item (meaning, form, nuance, common mistakes).'),
+        examples: strList('The example sentences you gave, with reading and translation, one per item.'),
+      },
+      ['topic', 'subject', 'asked', 'summary', 'points', 'examples'],
+    ),
+  },
+  {
+    name: 'lesson_quiz_result',
+    description: "Record the user's answer to a quiz question on a saved lesson: right answers push the next quiz further out, wrong ones bring it back soon.",
+    parameters: obj({ id: int('Lesson id'), correct: { type: 'boolean', description: 'Was the answer right?' }, note: str('What they got wrong, if anything (short).') }, ['id', 'correct']),
+  },
+  {
+    name: 'lesson_forget',
+    description: 'Delete a saved lesson when the user asks.',
+    parameters: obj({ id: int('Lesson id') }),
+  },
+];
+
 const PICTURES: ToolSpec[] = [
   {
     name: 'draw_picture',
@@ -512,7 +549,7 @@ const MAPS: ToolSpec[] = [
 
 export function toolSpecs(opts: { wanikani: boolean; google: Google | null; maps: boolean; pictures?: boolean }): ToolSpec[] {
   const g = opts.google;
-  return [...CORE, ...PREFERENCES, CHARACTER, VOICE_STYLE, ...MONEY, ...(g?.has('gmail') ? [MONEY_EMAIL] : []), ...HEALTH, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : []), ...(opts.pictures ? PICTURES : [])];
+  return [...CORE, ...PREFERENCES, CHARACTER, VOICE_STYLE, ...MONEY, ...(g?.has('gmail') ? [MONEY_EMAIL] : []), ...HEALTH, ...LESSONS, ...ROLEPLAY, ...(opts.wanikani ? [WANIKANI] : []), ...(g ? GOOGLE.filter(([f]) => g.has(f)).map(([, t]) => t) : []), ...(g?.has('drive') ? WATCH : []), ...(opts.maps ? MAPS : []), ...(opts.pictures ? PICTURES : [])];
 }
 
 const STAGES = ['Lesson', 'Apprentice 1', 'Apprentice 2', 'Apprentice 3', 'Apprentice 4', 'Guru 1', 'Guru 2', 'Master', 'Enlightened', 'Burned'];
@@ -853,6 +890,37 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
         ctx.store.updateSettings({ character: r.character });
         const items = r.character[section] ?? [];
         return ok(`Character sheet updated. ${section}: ${items.length ? items.map((x, i) => `${i + 1}. ${x}`).join(' ') : '(empty)'}`);
+      }
+      case 'lesson_find': {
+        const found = findLessons(ctx.store.lessons(ctx.chatKey), s('query')).slice(0, 3);
+        return ok(found.length ? found.map(lessonDetail).join('\n\n') : `No saved lesson about "${s('query')}" yet: teach it fresh, then save it with lesson_save.`);
+      }
+      case 'lesson_save': {
+        if (!s('topic') || !s('summary')) return fail('A lesson needs a topic and a summary.');
+        const list = (k: string) => (Array.isArray(a[k]) ? (a[k] as unknown[]).map(String).filter(Boolean) : []);
+        const day = lessonDay(now, tz);
+        const r = saveLesson(
+          ctx.store.lessons(ctx.chatKey),
+          { topic: s('topic'), subject: s('subject'), asked: s('asked'), summary: s('summary'), points: list('points'), examples: list('examples') },
+          day,
+          () => ctx.store.newId(),
+        );
+        ctx.store.setLessons(ctx.chatKey, r.lessons);
+        return ok(r.updated ? `Added to lesson #${r.lesson.id} (${r.lesson.topic}); its quiz schedule is unchanged.` : `Saved lesson #${r.lesson.id}; first quiz due ${r.lesson.due}.`);
+      }
+      case 'lesson_quiz_result': {
+        const lessons = ctx.store.lessons(ctx.chatKey);
+        const l = lessons.find((x) => x.id === Number(a.id));
+        if (!l) return fail(`No lesson #${a.id}.`);
+        const updated = recordQuiz(l, a.correct === true, lessonDay(now, tz), s('note'));
+        ctx.store.setLessons(ctx.chatKey, lessons.map((x) => (x.id === l.id ? updated : x)));
+        return ok(`Recorded (${a.correct === true ? 'right' : 'wrong'}); next quiz on #${l.id} due ${updated.due}.`);
+      }
+      case 'lesson_forget': {
+        const lessons = ctx.store.lessons(ctx.chatKey);
+        if (!lessons.some((x) => x.id === Number(a.id))) return fail(`No lesson #${a.id}.`);
+        ctx.store.setLessons(ctx.chatKey, lessons.filter((x) => x.id !== Number(a.id)));
+        return ok(`Deleted lesson #${a.id}.`);
       }
       case 'draw_picture': {
         const pics = ctx.pictures;

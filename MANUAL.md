@@ -134,6 +134,8 @@ It remembers the recent conversation. `/reset` forgets the conversation but keep
 | `/kanji` | Kanji of the day |
 | `/word` | Japanese word of the day |
 | `/jlpt N4` | Level for kanji/word of the day when WaniKani isn't connected (N5–N1) |
+| `/lessons [word]` | Lessons the bot taught you; `/lessons forget <id>` deletes one |
+| `/quiz [topic or #id]` | Quiz on past lessons (due ones first); `/quiz daily 20:00` every day, `/quiz daily off` |
 
 ### Personality, preferences, roleplay
 | Command | What it does |
@@ -381,6 +383,20 @@ the bot reads the newest export every night at the cleanup time (03:00) and fill
   - Without WaniKani, they follow your `/jlpt` level and never repeat recent ones.
 - Ask anything Japanese: grammar, translations, "what does this sign say?" with a photo. Japanese words come with hiragana readings for learners.
 - Practise conversation with `/roleplay` (see below).
+
+### Lessons and quizzes
+When you ask the bot to teach you something ("please teach me how to use 我慢する in real sentences"), it keeps the lesson:
+what you asked, the key points and the example sentences.
+- **No repeats:** before teaching, it checks what it already taught you. Asked about the same thing again, it builds on the lesson
+  (new angles, harder examples, or a quick quiz) instead of teaching it from scratch, unless you ask to go over it again.
+- **Quizzes with spaced repetition:** a new lesson is due for a quiz the next day. A right answer pushes the next quiz further out
+  (3, 7, 14, 30, 60 then 120 days); a wrong one brings it back the next day.
+  - `/quiz` quizzes you on the lessons that are due (or the latest ones), one question at a time; just answer in chat. Say "stop" to end.
+  - `/quiz 我慢する` or `/quiz #12` quizzes one lesson.
+  - `/quiz daily 20:00` sends a quiz every day at that time when lessons are due (nothing on days with none); `/quiz daily off` stops it.
+  - The bot may also offer a quick quiz when you chat and something is due.
+- `/lessons` lists them with their next quiz; `/lessons gaman` shows a lesson in full with a 📝 quiz button; `/lessons forget 12` deletes one.
+- It works for any subject you ask it to teach, not only Japanese.
 
 ---
 

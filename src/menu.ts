@@ -36,6 +36,8 @@ export const MENU: [string, string, string][] = [
   ['health', 'Watch data: steps, sleep, heart rate', 'ข้อมูลนาฬิกา: ก้าวเดิน การนอน หัวใจ'],
   ['healthimport', 'Import a Samsung Health export', 'นำเข้าข้อมูลจาก Samsung Health'],
   ['healthconnect', 'Import the Health Connect export now', 'นำเข้าข้อมูล Health Connect ตอนนี้'],
+  ['lessons', 'Lessons I taught you', 'บทเรียนที่ฉันสอนคุณ'],
+  ['quiz', 'Quiz me on past lessons', 'ทดสอบบทเรียนที่เรียนไปแล้ว'],
   ['review', 'Do your WaniKani reviews here', 'ทำรีวิว WaniKani ที่นี่'],
   ['kanji', 'Kanji of the day', 'คันจิประจำวัน'],
   ['word', 'Japanese word of the day', 'คำศัพท์ญี่ปุ่นประจำวัน'],
