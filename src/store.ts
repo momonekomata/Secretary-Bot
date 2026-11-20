@@ -30,6 +30,8 @@ export interface Reminder {
   firstAt?: string;
   /** Local days (YYYY-MM-DD) the user marked it done. */
   doneDays?: string[];
+  /** Set on reminders kept only for their done record, after they were cancelled or finished. */
+  endedAt?: string;
 }
 
 export interface Todo {
@@ -179,6 +181,8 @@ interface Data {
   memories: Record<string, Memory[]>;
   todos: Record<string, Todo[]>;
   reminders: Reminder[];
+  /** Cancelled or finished reminders that have a done record, so the record isn't lost. */
+  endedReminders: Reminder[];
   settings: Settings;
   usage: UsageRow[];
   /** Kanji and words already sent as "of the day", newest last. */
@@ -204,6 +208,7 @@ const empty = (): Data => ({
   memories: {},
   todos: {},
   reminders: [],
+  endedReminders: [],
   settings: {},
   usage: [],
   japanese: { kanji: [], words: [] },
@@ -327,7 +332,7 @@ export class Store {
     return chatKey ? this.data.reminders.filter((r) => r.chatKey === chatKey) : this.data.reminders;
   }
 
-  addReminder(chatKey: string, text: string, dueAt: Date, repeat: Repeat = 'none', untilDone?: Reminder['untilDone']): Reminder {
+  addReminder(chatKey: string, text: string, dueAt: Date, repeat: Repeat = 'none', untilDone?: Reminder['untilDone'], doneDays?: string[]): Reminder {
     const r: Reminder = {
       id: this.data.nextId++,
       chatKey,
@@ -335,6 +340,7 @@ export class Store {
       dueAt: dueAt.toISOString(),
       ...(repeat !== 'none' ? { repeat } : {}),
       ...(untilDone ? { untilDone, firstAt: dueAt.toISOString() } : {}),
+      ...(doneDays?.length ? { doneDays: [...new Set(doneDays)].sort() } : {}),
     };
     this.data.reminders.push(r);
     this.save();
@@ -353,11 +359,39 @@ export class Store {
     this.save();
   }
 
+  /** Removes a pending reminder; one with a done record is kept in endedReminders so the record stays. */
   removeReminder(chatKey: string, id: number): boolean {
-    const n = this.data.reminders.length;
-    this.data.reminders = this.data.reminders.filter((r) => !(r.id === id && r.chatKey === chatKey));
-    this.save();
-    return this.data.reminders.length !== n;
+    const r = this.takeReminder(chatKey, id);
+    if (r?.doneDays?.length) {
+      this.data.endedReminders = [...this.data.endedReminders.filter((x) => !(x.id === id && x.chatKey === chatKey)), { ...r, endedAt: new Date().toISOString() }].slice(-100);
+      this.save();
+    }
+    return !!r;
+  }
+
+  /** Removes and returns a pending reminder (without keeping its record: the caller carries it over). */
+  takeReminder(chatKey: string, id: number): Reminder | null {
+    const r = this.data.reminders.find((x) => x.id === id && x.chatKey === chatKey) ?? null;
+    if (r) {
+      this.data.reminders = this.data.reminders.filter((x) => x !== r);
+      this.save();
+    }
+    return r;
+  }
+
+  /** Cancelled or finished reminders kept for their done record. */
+  endedReminders(chatKey: string): Reminder[] {
+    return this.data.endedReminders.filter((r) => r.chatKey === chatKey);
+  }
+
+  /** Takes an ended reminder's record out of the archive (when a new reminder replaces it). */
+  takeEndedReminder(chatKey: string, id: number): Reminder | null {
+    const r = this.data.endedReminders.find((x) => x.id === id && x.chatKey === chatKey) ?? null;
+    if (r) {
+      this.data.endedReminders = this.data.endedReminders.filter((x) => x !== r);
+      this.save();
+    }
+    return r;
   }
 
   /** Removes and returns reminders due at or before `now`. */

@@ -184,6 +184,8 @@ Reminders can repeat daily, on weekdays, weekly or monthly. Ask "what reminders 
 - Say "remind me to take my vitamins every day at 9, every hour until I've taken them". You can also pick how often and when to stop for the day ("every 2 hours, not after 22:00"); the default is every hour until 21:00.
 - Each reminder has a **✅ Done** button. Tap it, or just tell the bot ("I took my vitamins"). It stops reminding for the rest of the day and starts again at the first time the next day.
 - Every day you mark it done is recorded, so "did I take my vitamins this week?" gets a real answer. `/reminders` lists your reminders with today's status and the days done in the last two weeks.
+- Missed a tap? Tell it about earlier days ("I took them Monday and Tuesday too") and it records those days, up to 120 days back.
+- Changing a reminder (time, how often) keeps its record, and so does cancelling it: `/reminders` still shows the days done.
 - Older reminders set up before this (plain repeating ones) have no record. To switch, ask the bot to cancel the old vitamin reminders and set a new one as above.
 
 **Memories.** The bot saves lasting facts about you ("my sister's name is Ploy", "I'm allergic to shrimp") and uses them later.
