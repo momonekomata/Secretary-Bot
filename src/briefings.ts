@@ -8,6 +8,7 @@ import { fetchNews, formatNews } from './news';
 import type { Store, UsageRow } from './store';
 import { modelInfo } from './models';
 import { isBirthday } from './character';
+import { dueLessons, quizPrompt } from './lessons';
 import { localClock } from './time';
 import { t } from './i18n';
 import { bodyNumbers } from './health';
@@ -134,6 +135,15 @@ export class Briefings {
       formatWeather(city, f, aq, 2),
       'weather',
     );
+  }
+
+  /** The daily quiz on lessons due (/quiz daily), as a chat turn so the user's answers are graded in context; null when none are due. */
+  async quiz(chatKey: string): Promise<string | null> {
+    const lessons = this.store.lessons(chatKey);
+    const due = dueLessons(lessons, localClock(this.now(), this.cfg.timezone).day);
+    if (!due.length) return null;
+    const prompt = quizPrompt(due, lessons);
+    return this.agent.reply({ chatKey, text: t('(daily quiz time)', '(ถึงเวลาทดสอบประจำวัน)'), fileText: `It's the user's daily quiz time (they set it with /quiz daily). Greet them in one short line, then start.\n\n${prompt}`, kind: 'quiz' });
   }
 
   /** The bot's birthday message (from its character sheet), or null when today isn't its birthday. */

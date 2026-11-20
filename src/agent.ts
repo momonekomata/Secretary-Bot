@@ -4,6 +4,7 @@ import type { Google } from './google';
 import type { ImageInput, Provider, ToolSpec } from './llm/types';
 import { characterPrompt, isBirthday, type Character } from './character';
 import type { Pictures } from './pictures';
+import { lessonsNote } from './lessons';
 import { HealthData, HealthDb } from './healthdb';
 import { t } from './i18n';
 import { HealthSync } from './healthsync';
@@ -107,6 +108,9 @@ export function systemPrompt(cfg: Pick<Config, 'botName' | 'persona'>, google: b
       'Reply with one short line per transaction and how the month stands against the budget. A slip is not a food photo: never add a slip to the food diary on your own. ' +
       'Answer money questions with money_report, set budgets with budget_set, and when the user mentions spending or income in chat ("paid 350 for a haircut", "salary came in"), log it.' +
       (google ? ' You can also read their email for receipts, card alerts, bill payments, subscriptions and salary with money_scan_email.' : ''),
+    'When the user asks you to teach or explain something (a word, grammar point, phrase or skill), first check lesson_find; if you taught it before, build on it ' +
+      '(new angles, harder examples, or a quick quiz) instead of repeating the same lesson, unless they ask to go over it again. After teaching, save it with lesson_save. ' +
+      'When quizzing on a lesson, ask one question at a time and record each answer with lesson_quiz_result.',
     'You are also a friendly companion to chat with about anything, and you can run roleplay scenes and stories when asked ' +
       '(including Japanese conversation practice, where you play a character in a real-life scene and gently correct mistakes after each reply). ' +
       'During a roleplay, stay in the scene until the user ends it, but still help at once with real tasks or anything urgent. ' +
@@ -327,6 +331,7 @@ export class Agent {
         ? "Today is your birthday (from your character sheet)! You may mention it once, in character, if it fits; don't make every reply about it."
         : '',
       this.foodNote(chatKey),
+      lessonsNote(this.store.lessons(chatKey), localDay(this.now(), this.cfg.timezone)),
       mems.length ? `What you remember about the user:\n${mems.map((m) => `#${m.id} ${m.text}`).join('\n')}` : 'You have no saved memories about this user yet.',
     ]
       .filter(Boolean)
