@@ -953,7 +953,7 @@ export async function runCommand(text: string, ctx: CommandContext): Promise<Com
 
       // --- reminders ---
       case '/reminders':
-        return formatReminders(store.reminders(chatKey), now, cfg.timezone);
+        return formatReminders(store.reminders(chatKey), now, cfg.timezone, store.endedReminders(chatKey));
       case '/rdone': {
         const r = markDone(store, chatKey, Number(arg.replace('#', '')), now, cfg.timezone);
         if (!r) return { text: t(`No reminder #${arg}. See /reminders.`, `ไม่มีการแจ้งเตือน #${arg} ดูได้ที่ /reminders`) };

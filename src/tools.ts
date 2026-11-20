@@ -13,7 +13,7 @@ import { budgetAlerts, CATEGORY_KEYS, findCategory, logTxn, report, scanEmail, s
 import { fetchNews, formatNews } from './news';
 import type { City, Store } from './store';
 import { formatTime, localDay, parseHHMM, REPEATS, type Repeat } from './time';
-import { DEFAULT_NAG_MINUTES, DEFAULT_STOP_AT, markDone, reminderLine } from './reminders';
+import { checkDays, DEFAULT_NAG_MINUTES, DEFAULT_STOP_AT, endedLine, markDone, reminderLine } from './reminders';
 import { airQuality, forecast, formatWeather, geocode } from './weather';
 import { fetchWaniKani } from './wanikani';
 
@@ -67,6 +67,9 @@ const CORE: ToolSpec[] = [
         },
         every_minutes: int(`With until_done: minutes between follow-ups (15 to 360, default ${DEFAULT_NAG_MINUTES}).`),
         stop_at: str(`With until_done: local time (HH:MM) after which no more follow-ups that day (default ${DEFAULT_STOP_AT}).`),
+        replaces: int(
+          'To change an existing reminder (new time, text or follow-ups), its id: it is replaced and its record of days done carries over. Do this instead of cancelling and setting a new one.',
+        ),
       },
       ['at', 'text', 'repeat'],
     ),
@@ -74,16 +77,23 @@ const CORE: ToolSpec[] = [
   {
     name: 'list_reminders',
     description:
-      "List this user's reminders with their ids, and for until-done reminders the days the user marked them done. That record is the only source for whether they did it (e.g. took their vitamins): never guess from the conversation.",
+      "List this user's reminders with their ids, and for until-done reminders the days the user marked them done (also for ended reminders). That record is the only source for whether they did it (e.g. took their vitamins): never guess from the conversation. If they say they did it on a day that isn't recorded, record it with reminder_done.",
     parameters: obj({}),
   },
   {
     name: 'reminder_done',
     description:
-      'Record that the user did what a reminder asks today (e.g. "I took my vitamins"): stops today\'s follow-ups and adds today to its record. Use list_reminders for the id if you do not have it.',
+      'Record that the user did what a reminder asks (e.g. "I took my vitamins"): adds the day to its record, and for today stops today\'s follow-ups. When they say they did it on earlier days ("I took them Monday to Wednesday"), pass those dates in days. Use list_reminders for the id if you do not have it.',
+    parameters: obj(
+      { id: int('Reminder id'), days: strList('Local dates done, YYYY-MM-DD, today or earlier (up to 120 days back). Leave out for today.') },
+      ['id'],
+    ),
+  },
+  {
+    name: 'cancel_reminder',
+    description: 'Cancel a reminder (including a whole repeating series) by id. Its record of days done is kept. To change a reminder, use set_reminder with replaces instead.',
     parameters: obj({ id: int('Reminder id') }),
   },
-  { name: 'cancel_reminder', description: 'Cancel a reminder (including a whole repeating series) by id.', parameters: obj({ id: int('Reminder id') }) },
   { name: 'todo_add', description: "Add an item to the user's simple to-do list kept by this bot.", parameters: obj({ title: str('The to-do item.') }) },
   { name: 'todo_list', description: "Show the user's to-do list with ids.", parameters: obj({}) },
   { name: 'todo_done', description: 'Mark a to-do item done (removes it) by id.', parameters: obj({ id: int('To-do id') }) },
@@ -522,20 +532,37 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
           if (parseHHMM(stop) === null) return fail(`stop_at "${stop}" is not a HH:MM time.`);
           untilDone = { everyMin: Math.min(360, Math.max(15, Math.round(every))), stopAt: stop.padStart(5, '0') };
         }
-        const r = ctx.store.addReminder(ctx.chatKey, s('text').slice(0, 1000), at, repeat, untilDone);
+        let carried: string[] = [];
+        if (a.replaces != null && a.replaces !== '') {
+          const old = ctx.store.takeReminder(ctx.chatKey, Number(a.replaces)) ?? ctx.store.takeEndedReminder(ctx.chatKey, Number(a.replaces));
+          if (!old) return fail(`No reminder #${a.replaces} to replace (see list_reminders).`);
+          carried = old.doneDays ?? [];
+        }
+        const r = ctx.store.addReminder(ctx.chatKey, s('text').slice(0, 1000), at, repeat, untilDone, carried);
         return ok(
           `Reminder #${r.id} set for ${formatTime(at, tz)}${repeat !== 'none' ? `, repeating ${repeat}` : ''}` +
-            (untilDone ? `, following up every ${untilDone.everyMin} min until marked done (not after ${untilDone.stopAt}); the message has a Done button.` : '.'),
+            (untilDone ? `, following up every ${untilDone.everyMin} min until marked done (not after ${untilDone.stopAt}); the message has a Done button.` : '.') +
+            (a.replaces != null && a.replaces !== '' ? ` It replaces #${a.replaces}${carried.length ? `; its ${carried.length} recorded day(s) done carried over` : ''}.` : ''),
         );
       }
       case 'list_reminders': {
         const rs = ctx.store.reminders(ctx.chatKey);
-        return ok(rs.length ? rs.map((r) => reminderLine(r, now, tz)).join('\n') : 'No pending reminders.');
+        const ended = ctx.store.endedReminders(ctx.chatKey);
+        return ok(
+          [
+            rs.length ? rs.map((r) => reminderLine(r, now, tz)).join('\n') : 'No pending reminders.',
+            ...(ended.length ? ['Ended reminders, kept for their record:', ...ended.map((r) => endedLine(r, now, tz))] : []),
+          ].join('\n'),
+        );
       }
       case 'reminder_done': {
-        const r = markDone(ctx.store, ctx.chatKey, Number(a.id), now, tz);
+        const asked = Array.isArray(a.days) ? (a.days as unknown[]).map(String).filter(Boolean) : [];
+        const { ok: days, bad } = checkDays(asked, now, tz);
+        if (asked.length && !days.length) return fail(`None of these days can be recorded (future, older than 120 days, or not YYYY-MM-DD): ${bad.join(', ')}.`);
+        const r = markDone(ctx.store, ctx.chatKey, Number(a.id), now, tz, days);
         if (!r) return fail(`No reminder #${a.id}.`);
-        return ok(`Marked #${r.id} done for today. ${reminderLine(r, now, tz)}`);
+        const which = days.length ? days.join(', ') : 'today';
+        return ok(`Marked #${r.id} done for ${which}.${bad.length ? ` Not recorded (future, too old or not a date): ${bad.join(', ')}.` : ''} ${reminderLine(r, now, tz)}`);
       }
       case 'cancel_reminder':
         return ctx.store.removeReminder(ctx.chatKey, Number(a.id)) ? ok(`Cancelled reminder #${a.id}.`) : fail(`No pending reminder #${a.id}.`);

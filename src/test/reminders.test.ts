@@ -95,6 +95,37 @@ describe('reminders that follow up until done', () => {
     expect((await command('/rdone 99'))!.text).toMatch(/No reminder #99/);
   });
 
+  it('records earlier days the user mentions, but not future or impossible ones', async () => {
+    const now = { at: local('20', '10:00') };
+    const { store, tool } = setup(now);
+    await tool('set_reminder', { at: '2026-11-21T09:00:00+07:00', text: 'Vitamins', repeat: 'daily', until_done: true });
+    const r = await tool('reminder_done', { id: 1, days: ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-21', '2026-02-30'] });
+    expect(r.content).toMatch(/^Marked #1 done for 2026-11-16, 2026-11-17, 2026-11-18\. Not recorded \(future, too old or not a date\): 2026-11-21, 2026-02-30\./);
+    expect(store.reminders()[0]).toMatchObject({ doneDays: ['2026-11-16', '2026-11-17', '2026-11-18'], dueAt: local('21', '09:00').toISOString() });
+    expect((await tool('reminder_done', { id: 1, days: ['2026-12-01'] })).isError).toBe(true);
+  });
+
+  it('keeps the record when a reminder is changed or cancelled', async () => {
+    const now = { at: local('18', '08:00') };
+    const { store, tool, command } = setup(now);
+    await tool('set_reminder', { at: '2026-11-18T09:00:00+07:00', text: 'Vitamins', repeat: 'daily', until_done: true });
+    await tool('reminder_done', { id: 1 });
+    now.at = local('19', '08:00');
+    await tool('reminder_done', { id: 1 });
+
+    // Changing the time: the new reminder carries the record over.
+    now.at = local('20', '07:00');
+    const changed = await tool('set_reminder', { at: '2026-11-20T08:00:00+07:00', text: 'Vitamins', repeat: 'daily', until_done: true, replaces: 1 });
+    expect(changed.content).toMatch(/It replaces #1; its 2 recorded day\(s\) done carried over\./);
+    expect(store.reminders()).toMatchObject([{ id: 2, doneDays: ['2026-11-18', '2026-11-19'] }]);
+
+    // Cancelling keeps it too, and the AI and /reminders still see it.
+    expect((await tool('cancel_reminder', { id: 2 })).content).toBe('Cancelled reminder #2.');
+    expect(store.reminders()).toEqual([]);
+    expect((await tool('list_reminders', {})).content).toMatch(/Ended reminders, kept for their record:\n#2 \(ended .*\): Vitamins; done on 2 of the last 14 days \(11-18, 11-19\)/);
+    expect((await command('/reminders'))!.text).toContain('#2 Vitamins (ended): done 2 of the last 14 days (11-18, 11-19)');
+  });
+
   it('plain reminders still have no button', async () => {
     const now = { at: local('18', '08:00') };
     const { sent, tool, tick } = setup(now);

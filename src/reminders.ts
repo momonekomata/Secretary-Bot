@@ -44,16 +44,36 @@ export function nextTime(r: Reminder, now: Date, timeZone: string): Date | null 
   return nextOccurrence(first, r.repeat, timeZone, now);
 }
 
-/** Marks the reminder done for `now`'s day and, for until-done reminders, skips the rest of today's follow-ups. */
-export function markDone(store: Store, chatKey: string, id: number, now: Date, timeZone: string): Reminder | null {
+/**
+ * Which of `days` (YYYY-MM-DD) can be recorded: real dates, not in the future, within the kept period.
+ * Returns the accepted days and the rejected ones.
+ */
+export function checkDays(days: string[], now: Date, timeZone: string): { ok: string[]; bad: string[] } {
+  const today = localClock(now, timeZone).day;
+  const cutoff = localClock(new Date(now.getTime() - KEEP_DONE_DAYS * 864e5), timeZone).day;
+  const ok: string[] = [];
+  const bad: string[] = [];
+  for (const d of days.map((x) => x.trim())) {
+    const real = /^\d{4}-\d{2}-\d{2}$/.test(d) && new Date(`${d}T00:00:00Z`).toISOString().startsWith(d);
+    (real && d <= today && d >= cutoff ? ok : bad).push(d);
+  }
+  return { ok, bad };
+}
+
+/**
+ * Marks the reminder done on `days` (default: today; give checked days from checkDays). If today is among them,
+ * an until-done reminder skips the rest of today's follow-ups.
+ */
+export function markDone(store: Store, chatKey: string, id: number, now: Date, timeZone: string, days?: string[]): Reminder | null {
   const r = store.reminders(chatKey).find((x) => x.id === id);
   if (!r) return null;
   const day = localClock(now, timeZone).day;
+  const marking = days?.length ? days : [day];
   const cutoff = localClock(new Date(now.getTime() - KEEP_DONE_DAYS * 864e5), timeZone).day;
-  const doneDays = [...new Set([...(r.doneDays ?? []), day])].filter((d) => d >= cutoff).sort();
+  const doneDays = [...new Set([...(r.doneDays ?? []), ...marking])].filter((d) => d >= cutoff).sort();
   const updated: Reminder = { ...r, doneDays };
   // An until-done reminder still waiting to follow up today jumps to its next day (or ends if it doesn't repeat).
-  if (r.untilDone && localClock(new Date(r.dueAt), timeZone).day <= day) {
+  if (r.untilDone && marking.includes(day) && localClock(new Date(r.dueAt), timeZone).day <= day) {
     const next = nextTime(updated, now, timeZone);
     if (!next) {
       store.removeReminder(chatKey, id);
@@ -78,6 +98,14 @@ export function reminderMessage(r: Reminder): { text: string; buttons?: Button[]
   return { text, buttons: [[{ label: t('✅ Done', '✅ ทำแล้ว'), command: `/rdone ${r.id}` }]] };
 }
 
+/** A cancelled or finished reminder kept for its record, for the AI. */
+export function endedLine(r: Reminder, now: Date, timeZone: string): string {
+  const done = r.doneDays ?? [];
+  const since = localClock(new Date(now.getTime() - 14 * 864e5), timeZone).day;
+  const recent = done.filter((d) => d > since);
+  return `#${r.id} (ended ${(r.endedAt ?? '').slice(0, 10)}): ${r.text}; done on ${recent.length} of the last 14 days${recent.length ? ` (${recent.map((d) => d.slice(5)).join(', ')})` : ''}; all days done: ${done.join(', ')}`;
+}
+
 /** One line per reminder for the AI and /reminders: when it's next, how it repeats, and the days it was done. */
 export function reminderLine(r: Reminder, now: Date, timeZone: string): string {
   const today = localClock(now, timeZone).day;
@@ -94,7 +122,18 @@ export function reminderLine(r: Reminder, now: Date, timeZone: string): string {
 }
 
 /** /reminders: every reminder, when it's next, and for until-done ones what's been done; buttons to tick off today. */
-export function formatReminders(rs: Reminder[], now: Date, timeZone: string): { text: string; buttons?: Button[][] } {
+export function formatReminders(rs: Reminder[], now: Date, timeZone: string, ended: Reminder[] = []): { text: string; buttons?: Button[][] } {
+  const since14 = localClock(new Date(now.getTime() - 14 * 864e5), timeZone).day;
+  const endedBlock = ended
+    .filter((r) => (r.doneDays ?? []).some((d) => d > since14))
+    .map((r) => {
+      const recent = (r.doneDays ?? []).filter((d) => d > since14);
+      return t(
+        `#${r.id} ${r.text} (ended): done ${recent.length} of the last 14 days (${recent.map((d) => d.slice(5)).join(', ')})`,
+        `#${r.id} ${r.text} (สิ้นสุดแล้ว): ทำแล้ว ${recent.length} จาก 14 วันที่ผ่านมา (${recent.map((d) => d.slice(5)).join(', ')})`,
+      );
+    });
+  if (!rs.length && endedBlock.length) return { text: [t('⏰ No reminders now. Earlier records:', '⏰ ตอนนี้ไม่มีการแจ้งเตือน บันทึกก่อนหน้า:'), ...endedBlock].join('\n\n') };
   if (!rs.length) {
     return {
       text: t(
@@ -128,7 +167,7 @@ export function formatReminders(rs: Reminder[], now: Date, timeZone: string): { 
     return lines.join('\n');
   });
   return {
-    text: [t('⏰ Reminders:', '⏰ การแจ้งเตือน:'), ...blocks, t('To cancel or change one, just tell me (e.g. "cancel #12").', 'ถ้าจะยกเลิกหรือเปลี่ยน บอกฉันได้เลย (เช่น "ยกเลิก #12")')].join('\n\n'),
+    text: [t('⏰ Reminders:', '⏰ การแจ้งเตือน:'), ...blocks, ...(endedBlock.length ? [t('Earlier records:', 'บันทึกก่อนหน้า:'), ...endedBlock] : []), t('To cancel or change one, just tell me (e.g. "cancel #12").', 'ถ้าจะยกเลิกหรือเปลี่ยน บอกฉันได้เลย (เช่น "ยกเลิก #12")')].join('\n\n'),
     ...(buttons.length ? { buttons } : {}),
   };
 }
